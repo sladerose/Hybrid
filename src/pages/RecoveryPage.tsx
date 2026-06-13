@@ -1,0 +1,552 @@
+import { useEffect, useState, useMemo } from 'react'
+import { format, parseISO } from 'date-fns'
+import {
+  ComposedChart, AreaChart, ScatterChart,
+  Line, Bar, Area, Scatter,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, ReferenceLine, ZAxis,
+} from 'recharts'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type TrendRow = {
+  date: string
+  resting_hr: number | null
+  avg_stress: number | null
+  body_battery_highest: number | null
+  sleep_hours: string | null
+  rhr_7d_avg: string | null
+  stress_7d_avg: string | null
+  sleep_7d_avg: string | null
+  bb_high_7d_avg: string | null
+}
+
+type SleepRow = {
+  date: string
+  sleep_hours: string | null
+  sleep_deep_seconds: number | null
+  sleep_light_seconds: number | null
+  sleep_rem_seconds: number | null
+  sleep_awake_seconds: number | null
+  sleep_deep_percent: string | null
+  sleep_rem_percent: string | null
+}
+
+type CorrRow = {
+  date: string
+  sleep_hours: string | null
+  avg_stress: number | null
+  resting_hr: number | null
+  next_bb_high: number | null
+  week_vigorous_total: number | null
+  week_avg_bb_high: string | null
+}
+
+type StressRow = {
+  week_start: string
+  stress_value: number | null
+}
+
+// ── Chart config ──────────────────────────────────────────────────────────────
+
+const TIP = {
+  backgroundColor: '#111827',
+  border: '1px solid #374151',
+  borderRadius: '8px',
+  fontSize: 12,
+  color: '#f9fafb',
+}
+const GRID = '#1f2937'
+const TICK = { fontSize: 10, fill: '#6b7280' }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function n(v: string | number | null | undefined): number | null {
+  if (v == null) return null
+  const x = Number(v)
+  return isNaN(x) ? null : x
+}
+
+function avg(values: (number | null)[]): number | null {
+  const nums = values.filter((v): v is number => v != null)
+  if (!nums.length) return null
+  return nums.reduce((a, b) => a + b, 0) / nums.length
+}
+
+// ── UI atoms ──────────────────────────────────────────────────────────────────
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`bg-gray-900 border border-gray-800 rounded-xl p-4 ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+function ChartHeader({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="mb-3">
+      <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">{title}</p>
+      {sub && <p className="text-[11px] text-gray-600 mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
+function StatRow({ label, value, unit, accent }: { label: string; value: string; unit?: string; accent: string }) {
+  return (
+    <div className="py-3 border-b border-gray-800 last:border-0">
+      <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">{label}</p>
+      <p className={`text-xl font-semibold ${accent}`}>
+        {value}
+        {unit && <span className="text-xs font-normal text-gray-500 ml-1">{unit}</span>}
+      </p>
+    </div>
+  )
+}
+
+// ── Recovery trend chart ──────────────────────────────────────────────────────
+
+function RecoveryTrendChart({ data }: { data: TrendRow[] }) {
+  const chartData = [...data].reverse().map(d => ({
+    label: format(parseISO(d.date), 'MMM d'),
+    rhr: d.resting_hr,
+    stress: d.avg_stress,
+    bb: d.body_battery_highest,
+    sleep: n(d.sleep_hours),
+    rhr7: n(d.rhr_7d_avg),
+    stress7: n(d.stress_7d_avg),
+    sleep7: n(d.sleep_7d_avg),
+    bb7: n(d.bb_high_7d_avg),
+  }))
+
+  const interval = Math.max(1, Math.floor(chartData.length / 10))
+
+  return (
+    <ResponsiveContainer width="99%" height={300}>
+      <ComposedChart data={chartData} margin={{ top: 4, right: 42, bottom: 4, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+        <XAxis dataKey="label" tick={TICK} tickLine={false} interval={interval} />
+        <YAxis yAxisId="l" domain={[20, 100]} tick={TICK} tickLine={false} axisLine={false} width={28} />
+        <YAxis
+          yAxisId="r"
+          orientation="right"
+          domain={[4, 12]}
+          tick={TICK}
+          tickLine={false}
+          axisLine={false}
+          width={32}
+          tickFormatter={(v: number) => `${v}h`}
+        />
+        <Tooltip
+          contentStyle={TIP}
+          labelStyle={{ color: '#9ca3af' }}
+          formatter={(v: unknown, name: unknown): [string, string] => {
+            const s = String(name)
+            const num = Number(v)
+            if (s === 'Sleep') return [`${num.toFixed(1)}h`, s]
+            if (s === 'RHR') return [`${num} bpm`, s]
+            return [String(v), s]
+          }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+          formatter={(v: unknown) => <span style={{ color: '#9ca3af' }}>{String(v)}</span>}
+        />
+        <Line yAxisId="l" type="monotone" dataKey="bb" name="Body Battery" stroke="#10b981" strokeWidth={2} dot={false} connectNulls />
+        <Line yAxisId="l" type="monotone" dataKey="bb7" stroke="#10b981" strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />
+        <Line yAxisId="l" type="monotone" dataKey="rhr" name="RHR" stroke="#ef4444" strokeWidth={2} dot={false} connectNulls />
+        <Line yAxisId="l" type="monotone" dataKey="rhr7" stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />
+        <Line yAxisId="l" type="monotone" dataKey="stress" name="Stress" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls />
+        <Line yAxisId="l" type="monotone" dataKey="stress7" stroke="#f59e0b" strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />
+        <Line yAxisId="r" type="monotone" dataKey="sleep" name="Sleep" stroke="#8b5cf6" strokeWidth={2} dot={false} connectNulls />
+        <Line yAxisId="r" type="monotone" dataKey="sleep7" stroke="#8b5cf6" strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ── Sleep stages chart ────────────────────────────────────────────────────────
+
+function SleepStagesChart({ data }: { data: SleepRow[] }) {
+  const chartData = [...data]
+    .reverse()
+    .map(d => ({
+      label: format(parseISO(d.date), 'MMM d'),
+      Deep: d.sleep_deep_seconds ? +(d.sleep_deep_seconds / 3600).toFixed(2) : null,
+      REM: d.sleep_rem_seconds ? +(d.sleep_rem_seconds / 3600).toFixed(2) : null,
+      Light: d.sleep_light_seconds ? +(d.sleep_light_seconds / 3600).toFixed(2) : null,
+      Awake: d.sleep_awake_seconds ? +(d.sleep_awake_seconds / 3600).toFixed(2) : null,
+      deepPct: n(d.sleep_deep_percent),
+      remPct: n(d.sleep_rem_percent),
+    }))
+    .filter(d => d.Deep !== null || d.REM !== null)
+
+  return (
+    <ResponsiveContainer width="99%" height={280}>
+      <ComposedChart data={chartData} margin={{ top: 4, right: 38, bottom: 4, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} tickLine={false} interval={4} />
+        <YAxis yAxisId="hrs" domain={[0, 11]} tick={TICK} tickLine={false} axisLine={false} width={28} tickFormatter={(v: number) => `${v}h`} />
+        <YAxis yAxisId="pct" orientation="right" domain={[0, 45]} tick={TICK} tickLine={false} axisLine={false} width={32} tickFormatter={(v: number) => `${v}%`} />
+        <Tooltip
+          contentStyle={TIP}
+          labelStyle={{ color: '#9ca3af' }}
+          formatter={(v: unknown, name: unknown): [string, string] => {
+            const s = String(name)
+            const num = Number(v)
+            if (s.includes('%')) return [`${num.toFixed(1)}%`, s]
+            return [`${num.toFixed(1)}h`, s]
+          }}
+          cursor={{ fill: '#1f2937' }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+          formatter={(v: unknown) => <span style={{ color: '#9ca3af' }}>{String(v)}</span>}
+        />
+        <Bar yAxisId="hrs" dataKey="Deep" stackId="s" fill="#3b82f6" />
+        <Bar yAxisId="hrs" dataKey="REM" stackId="s" fill="#8b5cf6" />
+        <Bar yAxisId="hrs" dataKey="Light" stackId="s" fill="#374151" />
+        <Bar yAxisId="hrs" dataKey="Awake" stackId="s" fill="#f59e0b" radius={[2, 2, 0, 0]} />
+        <Line yAxisId="pct" type="monotone" dataKey="deepPct" name="Deep %" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
+        <Line yAxisId="pct" type="monotone" dataKey="remPct" name="REM %" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ── Scatter panel ─────────────────────────────────────────────────────────────
+
+function ScatterPanel({
+  data,
+  xLabel,
+  yLabel,
+  title,
+  sub,
+  dotColor,
+  xDomain,
+  yDomain,
+  refX,
+  refY,
+}: {
+  data: { x: number; y: number }[]
+  xLabel: string
+  yLabel: string
+  title: string
+  sub: string
+  dotColor: string
+  xDomain?: [number, number]
+  yDomain?: [number, number]
+  refX?: number
+  refY?: number
+}) {
+  if (data.length < 5) {
+    return (
+      <Card>
+        <ChartHeader title={title} sub={sub} />
+        <div className="h-[200px] flex items-center justify-center">
+          <p className="text-gray-600 text-sm">Need more data</p>
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <ChartHeader title={title} sub={sub} />
+      <ResponsiveContainer width="99%" height={200}>
+        <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+          <XAxis
+            dataKey="x"
+            type="number"
+            name={xLabel}
+            domain={xDomain ?? ['auto', 'auto']}
+            tick={TICK}
+            tickLine={false}
+            label={{ value: xLabel, position: 'insideBottom', offset: -16, fill: '#6b7280', fontSize: 10 }}
+          />
+          <YAxis
+            dataKey="y"
+            type="number"
+            name={yLabel}
+            domain={yDomain ?? ['auto', 'auto']}
+            tick={TICK}
+            tickLine={false}
+            axisLine={false}
+            width={28}
+          />
+          <ZAxis range={[24, 24]} />
+          <Tooltip contentStyle={TIP} />
+          {refX !== undefined && (
+            <ReferenceLine x={refX} stroke="#6b7280" strokeDasharray="4 4" strokeOpacity={0.5} />
+          )}
+          {refY !== undefined && (
+            <ReferenceLine y={refY} stroke="#6b7280" strokeDasharray="4 4" strokeOpacity={0.5} />
+          )}
+          <Scatter data={data} fill={dotColor} fillOpacity={0.65} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Card>
+  )
+}
+
+// ── Weekly stress chart ───────────────────────────────────────────────────────
+
+function WeeklyStressChart({ data }: { data: StressRow[] }) {
+  const chartData = [...data]
+    .sort((a, b) => a.week_start.localeCompare(b.week_start))
+    .map(d => ({
+      label: format(parseISO(d.week_start), 'd MMM'),
+      stress: d.stress_value,
+    }))
+
+  return (
+    <ResponsiveContainer width="99%" height={200}>
+      <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 4, left: 0 }}>
+        <defs>
+          <linearGradient id="stressGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} tickLine={false} interval={5} />
+        <YAxis domain={[20, 65]} tick={TICK} tickLine={false} axisLine={false} width={28} />
+        <Tooltip
+          contentStyle={TIP}
+          labelStyle={{ color: '#9ca3af' }}
+          formatter={(v: unknown): [string, string] => [String(v), 'Avg stress']}
+        />
+        <ReferenceLine
+          y={40}
+          stroke="#6b7280"
+          strokeDasharray="4 4"
+          strokeOpacity={0.5}
+          label={{ value: '40', fill: '#6b7280', fontSize: 9, position: 'insideTopRight' }}
+        />
+        <Area
+          type="monotone"
+          dataKey="stress"
+          name="Weekly Stress"
+          stroke="#f59e0b"
+          strokeWidth={2}
+          fill="url(#stressGrad)"
+          dot={false}
+          connectNulls
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function RecoveryPage() {
+  const { user } = useAuth()
+  const [trend, setTrend] = useState<TrendRow[]>([])
+  const [sleep, setSleep] = useState<SleepRow[]>([])
+  const [corr, setCorr] = useState<CorrRow[]>([])
+  const [stress, setStress] = useState<StressRow[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!user) return
+    const uid = user.id
+
+    Promise.all([
+      supabase
+        .from('v_recovery_trend')
+        .select('date,resting_hr,avg_stress,body_battery_highest,sleep_hours,rhr_7d_avg,stress_7d_avg,sleep_7d_avg,bb_high_7d_avg')
+        .eq('user_id', uid)
+        .order('date', { ascending: false })
+        .limit(90),
+      supabase
+        .from('v_sleep_quality')
+        .select('date,sleep_hours,sleep_deep_seconds,sleep_light_seconds,sleep_rem_seconds,sleep_awake_seconds,sleep_deep_percent,sleep_rem_percent')
+        .eq('user_id', uid)
+        .order('date', { ascending: false })
+        .limit(30),
+      supabase
+        .from('v_correlations')
+        .select('date,sleep_hours,avg_stress,resting_hr,next_bb_high,week_vigorous_total,week_avg_bb_high')
+        .eq('user_id', uid)
+        .order('date', { ascending: false }),
+      supabase
+        .from('garmin_weekly_stress')
+        .select('week_start,stress_value')
+        .eq('user_id', uid)
+        .order('week_start', { ascending: true }),
+    ]).then(([t, s, c, w]) => {
+      setTrend(t.data ?? [])
+      setSleep(s.data ?? [])
+      setCorr(c.data ?? [])
+      setStress(w.data ?? [])
+      setLoading(false)
+    })
+  }, [user])
+
+  // ── Derived scatter data ──
+
+  const sleepToBB = useMemo(
+    () =>
+      corr
+        .filter(d => d.sleep_hours != null && d.next_bb_high != null)
+        .map(d => ({ x: Number(d.sleep_hours), y: d.next_bb_high as number })),
+    [corr],
+  )
+
+  const stressToRHR = useMemo(
+    () =>
+      corr
+        .filter(d => d.avg_stress != null && d.resting_hr != null)
+        .map(d => ({ x: d.avg_stress as number, y: d.resting_hr as number })),
+    [corr],
+  )
+
+  const vigToBB = useMemo(() => {
+    const seen = new Set<string>()
+    return corr
+      .filter(d => d.week_vigorous_total != null && d.week_avg_bb_high != null)
+      .map(d => ({
+        x: d.week_vigorous_total as number,
+        y: Number(d.week_avg_bb_high),
+        key: `${d.week_vigorous_total}-${d.week_avg_bb_high}`,
+      }))
+      .filter(d => {
+        if (seen.has(d.key)) return false
+        seen.add(d.key)
+        return true
+      })
+  }, [corr])
+
+  // ── Sleep summary stats ──
+
+  const avgSleepHrs = avg(sleep.map(d => n(d.sleep_hours)))
+  const avgDeepPct = avg(sleep.map(d => n(d.sleep_deep_percent)))
+  const avgRemPct = avg(sleep.map(d => n(d.sleep_rem_percent)))
+  const lowDeepNights = sleep.filter(d => {
+    const v = n(d.sleep_deep_percent)
+    return v !== null && v < 5
+  }).length
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-5 h-5 rounded-full border-2 border-gray-700 border-t-gray-300 animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-base font-semibold text-white mb-0.5">Recovery</h1>
+        <p className="text-xs text-gray-500">
+          90-day wellness signals · dashed lines = 7-day rolling average
+        </p>
+      </div>
+
+      {/* Multi-signal trend */}
+      <Card>
+        <ChartHeader
+          title="Recovery Trend"
+          sub="Body battery · RHR · stress · sleep — 90 days"
+        />
+        <RecoveryTrendChart data={trend} />
+      </Card>
+
+      {/* Sleep stages + summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+        <Card className="lg:col-span-8">
+          <ChartHeader
+            title="Sleep Stages"
+            sub="Last 30 nights · bars = hours · dashed = % trend (right axis)"
+          />
+          <SleepStagesChart data={sleep} />
+        </Card>
+        <Card className="lg:col-span-4">
+          <ChartHeader title="30-Night Average" />
+          <StatRow
+            label="Avg sleep"
+            value={avgSleepHrs != null ? avgSleepHrs.toFixed(1) : '--'}
+            unit="hrs"
+            accent="text-purple-400"
+          />
+          <StatRow
+            label="Avg deep"
+            value={avgDeepPct != null ? avgDeepPct.toFixed(1) : '--'}
+            unit="%"
+            accent={avgDeepPct != null && avgDeepPct < 8 ? 'text-amber-400' : 'text-blue-400'}
+          />
+          <StatRow
+            label="Avg REM"
+            value={avgRemPct != null ? avgRemPct.toFixed(1) : '--'}
+            unit="%"
+            accent="text-purple-400"
+          />
+          <StatRow
+            label="Low deep nights"
+            value={String(lowDeepNights)}
+            unit="< 5% deep"
+            accent={lowDeepNights > 4 ? 'text-amber-400' : 'text-emerald-400'}
+          />
+        </Card>
+      </div>
+
+      {/* Cross-signal scatter plots */}
+      <div>
+        <p className="text-[10px] font-medium text-gray-600 uppercase tracking-widest mb-2">
+          Cross-signal correlations
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <ScatterPanel
+            data={sleepToBB}
+            xLabel="Sleep hrs"
+            yLabel="Next-day BB"
+            title="Sleep → Next-day Battery"
+            sub="More sleep → higher body battery?"
+            dotColor="#8b5cf6"
+            xDomain={[4, 11]}
+            yDomain={[0, 100]}
+            refX={7.5}
+            refY={70}
+          />
+          <ScatterPanel
+            data={stressToRHR}
+            xLabel="Avg stress"
+            yLabel="RHR (bpm)"
+            title="Stress → Resting HR"
+            sub="Does high stress elevate RHR?"
+            dotColor="#f59e0b"
+            xDomain={[15, 80]}
+            yDomain={[40, 70]}
+            refX={40}
+            refY={53}
+          />
+          <ScatterPanel
+            data={vigToBB}
+            xLabel="Vigorous min"
+            yLabel="Avg BB"
+            title="Training Load → Battery"
+            sub="Weekly vigorous min vs avg body battery"
+            dotColor="#10b981"
+            xDomain={[0, 200]}
+            yDomain={[40, 100]}
+            refX={150}
+          />
+        </div>
+      </div>
+
+      {/* Weekly stress */}
+      <Card>
+        <ChartHeader
+          title="Weekly Stress Trend"
+          sub="39 weeks · reference at 40 = moderate threshold"
+        />
+        <WeeklyStressChart data={stress} />
+      </Card>
+    </div>
+  )
+}
