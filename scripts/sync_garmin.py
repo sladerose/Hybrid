@@ -100,7 +100,8 @@ except Exception as e:
 # ── garmin_activities ─────────────────────────────────────────────────────────
 
 try:
-    activities = client.get_activities_fordate(yesterday)
+    raw = client.get_activities_fordate(yesterday)
+    activities = (raw or {}).get("ActivitiesForDay", {}).get("payload", [])
     if activities:
         rows = []
         for a in activities:
@@ -140,7 +141,8 @@ except Exception as e:
 # ── garmin_weekly_stress ──────────────────────────────────────────────────────
 
 try:
-    weekly = client.get_weekly_stress()
+    today = datetime.date.today().isoformat()
+    weekly = client.get_weekly_stress(today, 52)
     if weekly:
         rows = []
         items = weekly if isinstance(weekly, list) else weekly.get("weeklyStress", [])
