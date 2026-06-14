@@ -161,7 +161,7 @@ async def main():
         })
 
     if rows:
-        supabase.table("zepp_body_composition").insert(rows).execute()
+        supabase.table("zepp_body_composition").upsert(rows, on_conflict="user_id,date").execute()
         print(f"  zepp_body_composition OK ({len(rows)} new rows)")
     else:
         print("  zepp_body_composition: no new measurements")
