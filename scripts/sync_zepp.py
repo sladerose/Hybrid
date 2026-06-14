@@ -125,22 +125,22 @@ async def main():
         print("No measurements to sync.")
         return
 
-    # Get existing measured_at values to avoid duplicates
+    # Get existing dates to avoid duplicate-key violations on (user_id, date)
     try:
         existing = supabase.table("zepp_body_composition") \
-            .select("measured_at") \
+            .select("date") \
             .eq("user_id", USER_ID) \
-            .gte("measured_at", start_date) \
+            .gte("date", start_date) \
             .execute()
-        existing_ts = {r["measured_at"] for r in (existing.data or [])}
+        existing_dates = {r["date"] for r in (existing.data or [])}
     except Exception as e:
         print(f"  Could not fetch existing records: {e}", file=sys.stderr)
-        existing_ts = set()
+        existing_dates = set()
 
     rows = []
     for m in measurements:
         measured_at = m.get("measured_at") or m.get("timestamp") or m.get("date")
-        if not measured_at or measured_at in existing_ts:
+        if not measured_at or str(measured_at)[:10] in existing_dates:
             continue
         rows.append({
             "user_id": USER_ID,
