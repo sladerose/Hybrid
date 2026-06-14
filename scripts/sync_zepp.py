@@ -161,8 +161,15 @@ async def main():
         })
 
     if rows:
+        # Multiple measurements per day possible — keep latest per date before upsert
+        rows_by_date: dict = {}
+        for row in rows:
+            d = row["date"]
+            if d not in rows_by_date or (row["measured_at"] or "") > (rows_by_date[d]["measured_at"] or ""):
+                rows_by_date[d] = row
+        rows = list(rows_by_date.values())
         supabase.table("zepp_body_composition").upsert(rows, on_conflict="user_id,date").execute()
-        print(f"  zepp_body_composition OK ({len(rows)} new rows)")
+        print(f"  zepp_body_composition OK ({len(rows)} rows upserted)")
     else:
         print("  zepp_body_composition: no new measurements")
 
