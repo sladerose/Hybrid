@@ -16,7 +16,7 @@ export default function Layout() {
     <div className="flex h-screen bg-gray-950 overflow-hidden">
       <aside className="w-48 shrink-0 flex flex-col border-r border-gray-800">
         <div className="px-5 h-14 flex items-center border-b border-gray-800">
-          <span className="text-sm font-semibold text-white tracking-tight">slade.fit</span>
+          <span className="text-xl">🍑</span>
         </div>
 
         <nav className="flex-1 p-2 space-y-0.5">
