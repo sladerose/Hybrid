@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import {
+  bodyBatteryColor, rhrColor, sleepColor, stressColor,
+  vigorousMinsColor, vigorousMinsBg,
+} from '../lib/rag'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -150,6 +154,7 @@ function WeekCard({
   accent,
   sub,
   progress,
+  barColor,
 }: {
   label: string
   value: string | number | null | undefined
@@ -157,6 +162,7 @@ function WeekCard({
   accent: string
   sub?: string
   progress?: number
+  barColor?: string
 }) {
   return (
     <Card>
@@ -165,7 +171,7 @@ function WeekCard({
       {progress !== undefined && (
         <div className="mt-2 h-1 bg-gray-800 rounded-full overflow-hidden">
           <div
-            className="h-full bg-blue-500 rounded-full transition-all"
+            className={`h-full rounded-full transition-all ${barColor ?? 'bg-blue-500'}`}
             style={{ width: `${Math.min(100, progress)}%` }}
           />
         </div>
@@ -454,22 +460,14 @@ export default function DashboardPage() {
           <SignalCard
             label="Body Battery"
             value={readiness?.body_battery_highest ?? '--'}
-            accent={
-              !readiness?.body_battery_highest
-                ? 'text-white'
-                : readiness.body_battery_highest >= 70
-                  ? 'text-emerald-400'
-                  : readiness.body_battery_highest >= 50
-                    ? 'text-amber-400'
-                    : 'text-red-400'
-            }
+            accent={bodyBatteryColor(readiness?.body_battery_highest)}
             sub={`Low ${readiness?.body_battery_current ?? '--'} · peak today`}
           />
           <SignalCard
             label="Sleep"
             value={fmt(readiness?.sleep_hours)}
             unit="hrs"
-            accent="text-purple-400"
+            accent={sleepColor(n(readiness?.sleep_hours))}
             sub={
               readiness?.sleep_deep_percent != null
                 ? `Deep ${fmt(readiness.sleep_deep_percent, 0)}% · REM ${fmt(readiness.sleep_rem_percent, 0)}%`
@@ -480,22 +478,14 @@ export default function DashboardPage() {
             label="Resting HR"
             value={readiness?.resting_hr ?? '--'}
             unit="bpm"
-            accent="text-red-400"
+            accent={rhrColor(readiness?.resting_hr)}
             deltaVal={rhrDelta ?? undefined}
             sub={`7d avg ${readiness?.last_7_days_avg_resting_hr ?? '--'} bpm`}
           />
           <SignalCard
             label="Stress"
             value={readiness?.avg_stress ?? '--'}
-            accent={
-              !readiness?.avg_stress
-                ? 'text-white'
-                : readiness.avg_stress <= 30
-                  ? 'text-emerald-400'
-                  : readiness.avg_stress <= 50
-                    ? 'text-amber-400'
-                    : 'text-red-400'
-            }
+            accent={stressColor(readiness?.avg_stress)}
             sub={
               readiness?.readiness_score != null
                 ? `Readiness score ${fmt(readiness.readiness_score, 0)}`
@@ -531,15 +521,16 @@ export default function DashboardPage() {
             label="Vigorous mins"
             value={vigMin}
             unit="min"
-            accent={vigMin >= 150 ? 'text-emerald-400' : 'text-blue-400'}
+            accent={vigorousMinsColor(vigMin)}
             progress={vigProgress}
+            barColor={vigorousMinsBg(vigMin)}
             sub={`of 150 min target${vigMin >= 150 ? ' ✓' : ''}`}
           />
           <WeekCard
             label="Avg sleep"
             value={fmt(week?.avg_sleep)}
             unit="hrs"
-            accent="text-purple-400"
+            accent={sleepColor(n(week?.avg_sleep))}
             sub={
               week?.sleep_delta
                 ? (() => {

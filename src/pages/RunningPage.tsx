@@ -8,6 +8,7 @@ import {
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { cadenceColor, run5kColor } from '../lib/rag'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -554,19 +555,14 @@ export default function RunningPage() {
         <KpiCard
           label="Best 5k"
           value={best5k ? formatTime(best5k) : null}
-          accent={best5k != null && best5k <= 1500 ? 'text-emerald-400' : 'text-blue-400'}
+          accent={run5kColor(best5k)}
           sub={best5k ? `${(best5k / 300).toFixed(1)} min/km` : undefined}
         />
         <KpiCard
           label="Avg Cadence"
           value={avgCadence != null ? avgCadence.toFixed(0) : null}
           unit="spm"
-          accent={
-            avgCadence == null ? 'text-gray-400'
-            : avgCadence >= 85 ? 'text-emerald-400'
-            : avgCadence >= 78 ? 'text-amber-400'
-            : 'text-red-400'
-          }
+          accent={cadenceColor(avgCadence)}
           sub="last 5 runs"
         />
       </div>
