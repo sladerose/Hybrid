@@ -60,3 +60,29 @@ jobs:
           STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
           STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
         run: python scripts/sync_strava.py
+
+  sync-zepp:
+    name: Zepp Sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements_zepp.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements_zepp.txt
+
+      - name: Run Zepp sync
+        env:
+          ZEPP_APP_TOKEN: ${{ secrets.ZEPP_APP_TOKEN }}
+          ZEPP_USER_ID: ${{ secrets.ZEPP_USER_ID }}
+          ZEPP_REGION: ${{ secrets.ZEPP_REGION }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: python scripts/sync_zepp.py
