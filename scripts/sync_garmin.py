@@ -138,6 +138,62 @@ except Exception as e:
     print(f"  garmin_activities FAILED: {e}", file=sys.stderr)
 
 
+# ── garmin_fitness_age ───────────────────────────────────────────────────────
+
+try:
+    fa = client.get_fitnessage_data(yesterday)
+    if fa:
+        dto = fa.get("biometricAgeDTO") or fa.get("fitnessAgeDTO") or (fa if isinstance(fa, dict) else {})
+        components = dto.get("components") or {}
+
+        fitness_age = dto.get("fitnessAge") or dto.get("biometricAge")
+        chrono_age = dto.get("chronologicalAge")
+        achievable = dto.get("achievableFitnessAge") or dto.get("achievableBiometricAge") or dto.get("bestFitnessAge")
+        gap = dto.get("fitnessAgeGap") or dto.get("ageDifference") or (
+            round(chrono_age - fitness_age, 1) if chrono_age and fitness_age else None
+        )
+
+        def _comp(key, field="value"):
+            c = components.get(key) or {}
+            return c.get(field) if isinstance(c, dict) else None
+
+        row = {
+            "user_id": USER_ID,
+            "date": yesterday,
+            "fitness_age": fitness_age,
+            "chronological_age": chrono_age,
+            "age_difference": gap,
+            "achievable_fitness_age": achievable,
+            "rhr": dto.get("rhr") or dto.get("restingHeartRate") or _comp("rhr"),
+            "bmi": dto.get("bmi") or _comp("bmi"),
+            "vigorous_minutes_avg": dto.get("vigorousMinutesAvg") or _comp("vigorousMinutesAvg"),
+            "vigorous_days_avg": dto.get("vigorousDaysAvg") or _comp("vigorousDaysAvg"),
+            "synced_at": datetime.datetime.utcnow().isoformat(),
+        }
+
+        # Check if row for this date already exists (table has no guaranteed unique constraint)
+        existing = supabase.table("garmin_fitness_age") \
+            .select("id") \
+            .eq("user_id", USER_ID) \
+            .eq("date", yesterday) \
+            .execute()
+
+        if existing.data:
+            supabase.table("garmin_fitness_age") \
+                .update(row) \
+                .eq("id", existing.data[0]["id"]) \
+                .execute()
+        else:
+            supabase.table("garmin_fitness_age").insert(row).execute()
+
+        print(f"  garmin_fitness_age OK (age {fitness_age})")
+    else:
+        print(f"  garmin_fitness_age: no data for {yesterday}")
+except Exception as e:
+    errors.append(f"garmin_fitness_age: {e}")
+    print(f"  garmin_fitness_age FAILED: {e}", file=sys.stderr)
+
+
 # ── garmin_weekly_stress ──────────────────────────────────────────────────────
 
 try:

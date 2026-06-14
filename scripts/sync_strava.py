@@ -10,6 +10,7 @@ GitHub Secrets required:
 """
 
 import os
+import subprocess
 import sys
 import datetime
 import requests
@@ -39,7 +40,26 @@ def get_access_token():
         "grant_type": "refresh_token",
     })
     resp.raise_for_status()
-    return resp.json()["access_token"]
+    data = resp.json()
+
+    # Rotate stored refresh token if Strava issued a new one
+    new_refresh = data.get("refresh_token")
+    if new_refresh and new_refresh != REFRESH_TOKEN:
+        repo = os.environ.get("GITHUB_REPOSITORY")
+        if repo:
+            result = subprocess.run(
+                ["gh", "secret", "set", "STRAVA_REFRESH_TOKEN",
+                 "--repo", repo, "--body", new_refresh],
+                capture_output=True, text=True,
+            )
+            if result.returncode == 0:
+                print("  Strava refresh token rotated in GitHub Secrets")
+            else:
+                print(f"  WARNING: token rotation failed: {result.stderr.strip()}", file=sys.stderr)
+        else:
+            print(f"  WARNING: GITHUB_REPOSITORY not set — new refresh token not persisted", file=sys.stderr)
+
+    return data["access_token"]
 
 
 try:
