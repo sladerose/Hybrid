@@ -1,0 +1,2 @@
+supabase>=2.0.0
+zepp-life-mcp @ git+https://github.com/kubulashvili/zepp-life-mcp.git
