@@ -9,6 +9,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { cadenceColor, run5kColor } from '../lib/rag'
+import { useChartTheme } from '../lib/chartTheme'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,17 +42,7 @@ type WeeklyRow = {
   avg_relative_effort: string | null
 }
 
-// ── Chart config ──────────────────────────────────────────────────────────────
-
-const TIP = {
-  backgroundColor: '#111827',
-  border: '1px solid #374151',
-  borderRadius: '8px',
-  fontSize: 12,
-  color: '#f9fafb',
-}
-const GRID = '#1f2937'
-const TICK = { fontSize: 10, fill: '#6b7280' }
+// ── Chart config moved to useChartTheme() hook ───────────────────────────────
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -77,7 +68,7 @@ function avg(values: (number | null)[]): number | null {
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-gray-900 border border-gray-800 rounded-xl p-4 ${className}`}>
+    <div className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 ${className}`}>
       {children}
     </div>
   )
@@ -87,7 +78,7 @@ function ChartHeader({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="mb-3">
       <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">{title}</p>
-      {sub && <p className="text-[11px] text-gray-600 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
     </div>
   )
 }
@@ -112,7 +103,7 @@ function KpiCard({
         {value ?? '--'}
         {unit && <span className="text-xs font-normal text-gray-500 ml-1">{unit}</span>}
       </p>
-      {sub && <p className="text-[11px] text-gray-600 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
     </Card>
   )
 }
@@ -120,6 +111,7 @@ function KpiCard({
 // ── Weekly volume chart ───────────────────────────────────────────────────────
 
 function WeeklyRunVolumeChart({ data }: { data: WeeklyRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data]
     .filter(d => d.run_count && Number(d.run_count) > 0)
     .reverse()
@@ -135,7 +127,7 @@ function WeeklyRunVolumeChart({ data }: { data: WeeklyRow[] }) {
       <Card>
         <ChartHeader title="Weekly Run Volume" />
         <div className="h-[260px] flex items-center justify-center">
-          <p className="text-gray-600 text-sm">No run data</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">No run data</p>
         </div>
       </Card>
     )
@@ -196,6 +188,7 @@ function WeeklyRunVolumeChart({ data }: { data: WeeklyRow[] }) {
 // ── Best efforts chart ────────────────────────────────────────────────────────
 
 function BestEffortsChart({ data }: { data: RunRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data]
     .filter(d => d.best_5k || d.best_1k)
     .reverse()
@@ -210,7 +203,7 @@ function BestEffortsChart({ data }: { data: RunRow[] }) {
       <Card>
         <ChartHeader title="Best Efforts" sub="lower is faster" />
         <div className="h-[240px] flex items-center justify-center">
-          <p className="text-gray-600 text-sm">No best effort data</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">No best effort data</p>
         </div>
       </Card>
     )
@@ -287,6 +280,7 @@ function BestEffortsChart({ data }: { data: RunRow[] }) {
 // ── Cadence trend chart ───────────────────────────────────────────────────────
 
 function CadenceTrendChart({ data }: { data: RunRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data]
     .filter(d => d.cadence_precise && n(d.distance_km) != null && (n(d.distance_km) ?? 0) >= 2)
     .reverse()
@@ -301,7 +295,7 @@ function CadenceTrendChart({ data }: { data: RunRow[] }) {
       <Card>
         <ChartHeader title="Cadence Trend" sub="target: 85 spm" />
         <div className="h-[240px] flex items-center justify-center">
-          <p className="text-gray-600 text-sm">No cadence data</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">No cadence data</p>
         </div>
       </Card>
     )
@@ -353,12 +347,14 @@ function CadenceTrendChart({ data }: { data: RunRow[] }) {
 type Lap = { km: number; time: number; avg_hr?: number | null }
 
 function LapBreakdownChart({ run }: { run: RunRow }) {
+  const { TIP, GRID, TICK } = useChartTheme()
+
   if (!run.laps || run.laps.length === 0) {
     return (
       <Card>
         <ChartHeader title="Lap Breakdown" sub="Most recent run with lap data" />
         <div className="h-[260px] flex items-center justify-center">
-          <p className="text-gray-600 text-sm">No lap data for recent runs</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">No lap data for recent runs</p>
         </div>
       </Card>
     )
@@ -434,7 +430,7 @@ function RecentRunsTable({ data }: { data: RunRow[] }) {
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-gray-800">
+            <tr className="border-b border-gray-200 dark:border-gray-800">
               <th className="text-left py-2 pr-3 text-gray-500 font-medium">Date</th>
               <th className="text-right py-2 pr-3 text-gray-500 font-medium">km</th>
               <th className="text-right py-2 pr-3 text-gray-500 font-medium">Pace</th>
@@ -445,14 +441,14 @@ function RecentRunsTable({ data }: { data: RunRow[] }) {
           </thead>
           <tbody>
             {rows.map(r => (
-              <tr key={r.activity_id} className="border-b border-gray-800/50 last:border-0">
-                <td className="py-2 pr-3 text-gray-300">
+              <tr key={r.activity_id} className="border-b border-gray-200/50 dark:border-gray-800/50 last:border-0">
+                <td className="py-2 pr-3 text-gray-700 dark:text-gray-300">
                   {format(parseISO(r.start_date), 'MMM d')}
                 </td>
                 <td className="py-2 pr-3 text-right text-blue-400 tabular-nums">
                   {n(r.distance_km) != null ? n(r.distance_km)!.toFixed(1) : '--'}
                 </td>
-                <td className="py-2 pr-3 text-right text-gray-300 tabular-nums">
+                <td className="py-2 pr-3 text-right text-gray-700 dark:text-gray-300 tabular-nums">
                   {r.pace_formatted ?? '--'}
                 </td>
                 <td className="py-2 pr-3 text-right text-red-400 tabular-nums">
@@ -525,7 +521,7 @@ export default function RunningPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-5 h-5 rounded-full border-2 border-gray-700 border-t-gray-300 animate-spin" />
+        <div className="w-5 h-5 rounded-full border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 animate-spin" />
       </div>
     )
   }
@@ -533,7 +529,7 @@ export default function RunningPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-base font-semibold text-white mb-0.5">Running</h1>
+        <h1 className="text-base font-semibold text-gray-900 dark:text-white mb-0.5">Running</h1>
         <p className="text-xs text-gray-500">
           Weekly volume · pace progression · cadence · lap breakdown
         </p>

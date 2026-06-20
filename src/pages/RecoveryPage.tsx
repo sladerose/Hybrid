@@ -8,6 +8,7 @@ import {
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useChartTheme } from '../lib/chartTheme'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,17 +50,7 @@ type StressRow = {
   stress_value: number | null
 }
 
-// ── Chart config ──────────────────────────────────────────────────────────────
-
-const TIP = {
-  backgroundColor: '#111827',
-  border: '1px solid #374151',
-  borderRadius: '8px',
-  fontSize: 12,
-  color: '#f9fafb',
-}
-const GRID = '#1f2937'
-const TICK = { fontSize: 10, fill: '#6b7280' }
+// ── Chart config moved to useChartTheme() hook ───────────────────────────────
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -79,7 +70,7 @@ function avg(values: (number | null)[]): number | null {
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-gray-900 border border-gray-800 rounded-xl p-4 ${className}`}>
+    <div className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 ${className}`}>
       {children}
     </div>
   )
@@ -89,14 +80,14 @@ function ChartHeader({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="mb-3">
       <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">{title}</p>
-      {sub && <p className="text-[11px] text-gray-600 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
     </div>
   )
 }
 
 function StatRow({ label, value, unit, accent }: { label: string; value: string; unit?: string; accent: string }) {
   return (
-    <div className="py-3 border-b border-gray-800 last:border-0">
+    <div className="py-3 border-b border-gray-200 dark:border-gray-800 last:border-0">
       <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">{label}</p>
       <p className={`text-xl font-semibold ${accent}`}>
         {value}
@@ -109,6 +100,7 @@ function StatRow({ label, value, unit, accent }: { label: string; value: string;
 // ── Recovery trend chart ──────────────────────────────────────────────────────
 
 function RecoveryTrendChart({ data }: { data: TrendRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data].reverse().map(d => ({
     label: format(parseISO(d.date), 'MMM d'),
     rhr: d.resting_hr,
@@ -170,6 +162,7 @@ function RecoveryTrendChart({ data }: { data: TrendRow[] }) {
 // ── Sleep stages chart ────────────────────────────────────────────────────────
 
 function SleepStagesChart({ data }: { data: SleepRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data]
     .reverse()
     .map(d => ({
@@ -199,7 +192,7 @@ function SleepStagesChart({ data }: { data: SleepRow[] }) {
             if (s.includes('%')) return [`${num.toFixed(1)}%`, s]
             return [`${num.toFixed(1)}h`, s]
           }}
-          cursor={{ fill: '#1f2937' }}
+          cursor={{ fill: GRID }}
         />
         <Legend
           wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
@@ -241,12 +234,14 @@ function ScatterPanel({
   refX?: number
   refY?: number
 }) {
+  const { TIP, GRID, TICK, LABEL_FILL } = useChartTheme()
+
   if (data.length < 5) {
     return (
       <Card>
         <ChartHeader title={title} sub={sub} />
         <div className="h-[200px] flex items-center justify-center">
-          <p className="text-gray-600 text-sm">Need more data</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">Need more data</p>
         </div>
       </Card>
     )
@@ -265,7 +260,7 @@ function ScatterPanel({
             domain={xDomain ?? ['auto', 'auto']}
             tick={TICK}
             tickLine={false}
-            label={{ value: xLabel, position: 'insideBottom', offset: -16, fill: '#6b7280', fontSize: 10 }}
+            label={{ value: xLabel, position: 'insideBottom', offset: -16, fill: LABEL_FILL, fontSize: 10 }}
           />
           <YAxis
             dataKey="y"
@@ -295,6 +290,7 @@ function ScatterPanel({
 // ── Weekly stress chart ───────────────────────────────────────────────────────
 
 function WeeklyStressChart({ data }: { data: StressRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data]
     .sort((a, b) => a.week_start.localeCompare(b.week_start))
     .map(d => ({
@@ -434,7 +430,7 @@ export default function RecoveryPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-5 h-5 rounded-full border-2 border-gray-700 border-t-gray-300 animate-spin" />
+        <div className="w-5 h-5 rounded-full border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 animate-spin" />
       </div>
     )
   }
@@ -442,7 +438,7 @@ export default function RecoveryPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-base font-semibold text-white mb-0.5">Recovery</h1>
+        <h1 className="text-base font-semibold text-gray-900 dark:text-white mb-0.5">Recovery</h1>
         <p className="text-xs text-gray-500">
           90-day wellness signals · dashed lines = 7-day rolling average
         </p>
@@ -497,7 +493,7 @@ export default function RecoveryPage() {
 
       {/* Cross-signal scatter plots */}
       <div>
-        <p className="text-[10px] font-medium text-gray-600 uppercase tracking-widest mb-2">
+        <p className="text-[10px] font-medium text-gray-500 dark:text-gray-600 uppercase tracking-widest mb-2">
           Cross-signal correlations
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

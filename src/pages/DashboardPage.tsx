@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import {
   bodyBatteryColor, rhrColor, sleepColor, stressColor,
   vigorousMinsColor, vigorousMinsBg,
@@ -83,7 +84,7 @@ function delta(v: string | number | null, higherIsBetter = true): { text: string
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-gray-900 border border-gray-800 rounded-xl p-4 ${className}`}>
+    <div className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 ${className}`}>
       {children}
     </div>
   )
@@ -169,7 +170,7 @@ function WeekCard({
       <Label>{label}</Label>
       <BigNum value={value} unit={unit} accent={accent} />
       {progress !== undefined && (
-        <div className="mt-2 h-1 bg-gray-800 rounded-full overflow-hidden">
+        <div className="mt-2 h-1 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all ${barColor ?? 'bg-blue-500'}`}
             style={{ width: `${Math.min(100, progress)}%` }}
@@ -185,42 +186,46 @@ function WeekCard({
 
 type HeatmapMode = 'steps' | 'calories' | 'vigorous' | 'count'
 
-const HEATMAP_MODES: Record<
-  HeatmapMode,
-  {
-    label: string
-    getValue: (r: HeatmapRow) => number | null
-    thresholds: number[]
-    colors: string[]
-    legendMax: string
-  }
-> = {
+type HeatmapConfig = {
+  label: string
+  getValue: (r: HeatmapRow) => number | null
+  thresholds: number[]
+  darkColors: string[]
+  lightColors: string[]
+  legendMax: string
+}
+
+const HEATMAP_MODES: Record<HeatmapMode, HeatmapConfig> = {
   steps: {
     label: 'Steps',
     getValue: (r) => r.total_steps,
     thresholds: [3000, 5000, 7500, 10000],
-    colors: ['#0f172a', '#1e3a5f', '#1e40af', '#2563eb', '#3b82f6', '#60a5fa'],
+    darkColors: ['#0f172a', '#1e3a5f', '#1e40af', '#2563eb', '#3b82f6', '#60a5fa'],
+    lightColors: ['#f1f5f9', '#dbeafe', '#93c5fd', '#3b82f6', '#2563eb', '#1d4ed8'],
     legendMax: '10k',
   },
   calories: {
     label: 'Calories',
     getValue: (r) => r.active_calories,
     thresholds: [100, 250, 400, 600],
-    colors: ['#0f172a', '#451a03', '#92400e', '#b45309', '#d97706', '#fbbf24'],
+    darkColors: ['#0f172a', '#451a03', '#92400e', '#b45309', '#d97706', '#fbbf24'],
+    lightColors: ['#f1f5f9', '#fef9c3', '#fde047', '#f59e0b', '#d97706', '#b45309'],
     legendMax: '600+',
   },
   vigorous: {
     label: 'Vigorous min',
     getValue: (r) => r.vigorous_intensity_minutes,
     thresholds: [5, 15, 30, 45],
-    colors: ['#0f172a', '#052e16', '#14532d', '#15803d', '#16a34a', '#4ade80'],
+    darkColors: ['#0f172a', '#052e16', '#14532d', '#15803d', '#16a34a', '#4ade80'],
+    lightColors: ['#f1f5f9', '#dcfce7', '#86efac', '#22c55e', '#16a34a', '#15803d'],
     legendMax: '45min',
   },
   count: {
     label: 'Activities',
     getValue: (r) => r.activity_count,
     thresholds: [1, 2, 3, 4],
-    colors: ['#0f172a', '#1e1b4b', '#3730a3', '#4f46e5', '#6366f1', '#a5b4fc'],
+    darkColors: ['#0f172a', '#1e1b4b', '#3730a3', '#4f46e5', '#6366f1', '#a5b4fc'],
+    lightColors: ['#f1f5f9', '#ede9fe', '#c4b5fd', '#8b5cf6', '#7c3aed', '#6d28d9'],
     legendMax: '4+',
   },
 }
@@ -231,7 +236,12 @@ function localDateStr(d: Date): string {
 
 function ActivityHeatmap({ data, today }: { data: HeatmapRow[]; today: string }) {
   const [mode, setMode] = useState<HeatmapMode>('steps')
-  const cfg = HEATMAP_MODES[mode]
+  const { theme } = useTheme()
+  const cfgBase = HEATMAP_MODES[mode]
+  const cfg = {
+    ...cfgBase,
+    colors: theme === 'dark' ? cfgBase.darkColors : cfgBase.lightColors,
+  }
 
   const byDate = new Map(data.map((r) => [r.date, r]))
 
@@ -284,8 +294,8 @@ function ActivityHeatmap({ data, today }: { data: HeatmapRow[]; today: string })
               onClick={() => setMode(b.key)}
               className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
                 mode === b.key
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
+                  : 'text-gray-500 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
               }`}
             >
               {b.label}
@@ -400,7 +410,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-5 h-5 rounded-full border-2 border-gray-700 border-t-gray-300 animate-spin" />
+        <div className="w-5 h-5 rounded-full border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 animate-spin" />
       </div>
     )
   }
@@ -434,7 +444,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-base font-semibold text-white">Dashboard</h1>
+          <h1 className="text-base font-semibold text-gray-900 dark:text-white">Dashboard</h1>
           <p className="text-xs text-gray-500 mt-0.5">
             {readiness?.date
               ? format(parseISO(readiness.date), 'EEEE, d MMMM yyyy')

@@ -7,6 +7,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { bodyFatColor, visceralFatColor, metabolicAgeColor } from '../lib/rag'
+import { useChartTheme } from '../lib/chartTheme'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -25,17 +26,7 @@ type BodyRow = {
   basal_metabolic_rate: number | null
 }
 
-// ── Chart config ──────────────────────────────────────────────────────────────
-
-const TIP = {
-  backgroundColor: '#111827',
-  border: '1px solid #374151',
-  borderRadius: '8px',
-  fontSize: 12,
-  color: '#f9fafb',
-}
-const GRID = '#1f2937'
-const TICK = { fontSize: 10, fill: '#6b7280' }
+// ── Chart config moved to useChartTheme() hook ───────────────────────────────
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -60,7 +51,7 @@ function fmt(date: string) {
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-gray-900 border border-gray-800 rounded-xl p-4 ${className}`}>
+    <div className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 ${className}`}>
       {children}
     </div>
   )
@@ -70,7 +61,7 @@ function ChartHeader({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="mb-3">
       <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">{title}</p>
-      {sub && <p className="text-[11px] text-gray-600 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
     </div>
   )
 }
@@ -87,7 +78,7 @@ function KpiCard({
         {value ?? '--'}
         {unit && <span className="text-xs font-normal text-gray-500 ml-1">{unit}</span>}
       </p>
-      {sub && <p className="text-[11px] text-gray-600 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
     </Card>
   )
 }
@@ -95,6 +86,7 @@ function KpiCard({
 // ── Weight Trend ──────────────────────────────────────────────────────────────
 
 function WeightTrendChart({ data }: { data: BodyRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const weights = data.map(r => n(r.weight_kg))
   const avgs = rolling7(weights)
 
@@ -149,6 +141,7 @@ function WeightTrendChart({ data }: { data: BodyRow[] }) {
 // ── Body Fat + Muscle Mass ────────────────────────────────────────────────────
 
 function CompositionChart({ data }: { data: BodyRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const compData = data.filter(r => r.body_fat_percent != null)
 
   if (compData.length === 0) {
@@ -156,7 +149,7 @@ function CompositionChart({ data }: { data: BodyRow[] }) {
       <Card>
         <ChartHeader title="Body Composition" />
         <div className="h-[220px] flex items-center justify-center">
-          <p className="text-gray-600 text-sm">No composition data</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">No composition data</p>
         </div>
       </Card>
     )
@@ -240,6 +233,7 @@ function CompositionChart({ data }: { data: BodyRow[] }) {
 // ── Visceral Fat Chart ────────────────────────────────────────────────────────
 
 function ViscerumFatChart({ data }: { data: BodyRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const compData = data.filter(r => r.visceral_fat != null)
   if (!compData.length) return null
 
@@ -286,9 +280,9 @@ function ViscerumFatChart({ data }: { data: BodyRow[] }) {
 
 // ── Stats Panel ───────────────────────────────────────────────────────────────
 
-function StatRow({ label, value, accent = 'text-gray-300' }: { label: string; value: string; accent?: string }) {
+function StatRow({ label, value, accent = 'text-gray-700 dark:text-gray-300' }: { label: string; value: string; accent?: string }) {
   return (
-    <div className="flex justify-between items-center py-2 border-b border-gray-800 last:border-0">
+    <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-800 last:border-0">
       <span className="text-xs text-gray-500">{label}</span>
       <span className={`text-xs font-medium tabular-nums ${accent}`}>{value}</span>
     </div>
@@ -343,7 +337,7 @@ export default function BodyPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-5 h-5 rounded-full border-2 border-gray-700 border-t-gray-300 animate-spin" />
+        <div className="w-5 h-5 rounded-full border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 animate-spin" />
       </div>
     )
   }
@@ -371,7 +365,7 @@ export default function BodyPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-base font-semibold text-white mb-0.5">Body Composition</h1>
+        <h1 className="text-base font-semibold text-gray-900 dark:text-white mb-0.5">Body Composition</h1>
         <p className="text-xs text-gray-500">
           {data.length} readings · {compRows.length} with full composition data · Oct 2025 – present
         </p>

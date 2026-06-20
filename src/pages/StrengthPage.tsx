@@ -7,6 +7,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { sessionRatingColor } from '../lib/rag'
+import { useChartTheme } from '../lib/chartTheme'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,17 +43,7 @@ type ExerciseRow = {
   avg_reps: string | null
 }
 
-// ── Chart config ──────────────────────────────────────────────────────────────
-
-const TIP = {
-  backgroundColor: '#111827',
-  border: '1px solid #374151',
-  borderRadius: '8px',
-  fontSize: 12,
-  color: '#f9fafb',
-}
-const GRID = '#1f2937'
-const TICK = { fontSize: 10, fill: '#6b7280' }
+// ── Chart config moved to useChartTheme() hook ───────────────────────────────
 
 const DAY_COLOR: Record<string, string> = {
   Push: '#f97316',
@@ -85,7 +76,7 @@ function n(v: string | number | null | undefined): number | null {
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-gray-900 border border-gray-800 rounded-xl p-4 ${className}`}>
+    <div className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 ${className}`}>
       {children}
     </div>
   )
@@ -95,7 +86,7 @@ function ChartHeader({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="mb-3">
       <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">{title}</p>
-      {sub && <p className="text-[11px] text-gray-600 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
     </div>
   )
 }
@@ -120,7 +111,7 @@ function KpiCard({
         {value ?? '--'}
         {unit && <span className="text-xs font-normal text-gray-500 ml-1">{unit}</span>}
       </p>
-      {sub && <p className="text-[11px] text-gray-600 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
     </Card>
   )
 }
@@ -128,6 +119,7 @@ function KpiCard({
 // ── Session Volume Bar ────────────────────────────────────────────────────────
 
 function SessionVolumeChart({ data }: { data: SessionRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data]
     .reverse()
     .map(s => ({
@@ -141,7 +133,7 @@ function SessionVolumeChart({ data }: { data: SessionRow[] }) {
       <Card>
         <ChartHeader title="Session Volume" />
         <div className="h-[260px] flex items-center justify-center">
-          <p className="text-gray-600 text-sm">No sessions recorded yet</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">No sessions recorded yet</p>
         </div>
       </Card>
     )
@@ -212,7 +204,7 @@ function PPLBalanceChart({ data }: { data: SessionRow[] }) {
       <Card>
         <ChartHeader title="Push / Pull / Legs" />
         <div className="h-[220px] flex items-center justify-center">
-          <p className="text-gray-600 text-sm">No sessions yet</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">No sessions yet</p>
         </div>
       </Card>
     )
@@ -233,7 +225,7 @@ function PPLBalanceChart({ data }: { data: SessionRow[] }) {
                   {r.sessions} session{r.sessions !== 1 ? 's' : ''} &middot; {r.sets} sets &middot; {(r.volume / 1000).toFixed(1)}t
                 </span>
               </div>
-              <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div className="h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full"
                   style={{ width: `${pct}%`, backgroundColor: color }}
@@ -250,6 +242,7 @@ function PPLBalanceChart({ data }: { data: SessionRow[] }) {
 // ── Muscle Group Volume ───────────────────────────────────────────────────────
 
 function MuscleGroupChart({ data }: { data: ExerciseRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
   const agg: Record<string, number> = {}
   for (const row of data) {
     const mg = row.muscle_group
@@ -266,7 +259,7 @@ function MuscleGroupChart({ data }: { data: ExerciseRow[] }) {
       <Card>
         <ChartHeader title="Volume by Muscle Group" />
         <div className="h-[200px] flex items-center justify-center">
-          <p className="text-gray-600 text-sm">No data</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">No data</p>
         </div>
       </Card>
     )
@@ -354,7 +347,7 @@ function ExerciseProgressionTable({ data }: { data: ExerciseRow[] }) {
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-gray-800">
+            <tr className="border-b border-gray-200 dark:border-gray-800">
               <th className="text-left py-2 pr-3 text-gray-500 font-medium">Exercise</th>
               <th className="text-right py-2 pr-3 text-gray-500 font-medium">Max kg</th>
               <th className="text-right py-2 pr-3 text-gray-500 font-medium">Avg reps</th>
@@ -364,13 +357,13 @@ function ExerciseProgressionTable({ data }: { data: ExerciseRow[] }) {
           </thead>
           <tbody>
             {tableRows.map(r => (
-              <tr key={r.exercise} className="border-b border-gray-800/50 last:border-0">
-                <td className="py-2 pr-3 text-gray-300">
+              <tr key={r.exercise} className="border-b border-gray-200/50 dark:border-gray-800/50 last:border-0">
+                <td className="py-2 pr-3 text-gray-700 dark:text-gray-300">
                   <div>{r.exercise}</div>
-                  <div className="text-gray-600 text-[10px]">
+                  <div className="text-gray-400 dark:text-gray-600 text-[10px]">
                     {r.muscle_group}
                     {r.movement_pattern === 'Compound' && (
-                      <span className="ml-1 text-orange-700">compound</span>
+                      <span className="ml-1 text-orange-500 dark:text-orange-700">compound</span>
                     )}
                   </div>
                 </td>
@@ -378,10 +371,10 @@ function ExerciseProgressionTable({ data }: { data: ExerciseRow[] }) {
                   {r.max_weight > 0 ? (
                     <span className="text-orange-400 font-medium">{r.max_weight}</span>
                   ) : (
-                    <span className="text-gray-600">BW</span>
+                    <span className="text-gray-400 dark:text-gray-600">BW</span>
                   )}
                 </td>
-                <td className="py-2 pr-3 text-right text-gray-400 tabular-nums">
+                <td className="py-2 pr-3 text-right text-gray-500 dark:text-gray-400 tabular-nums">
                   {r.avg_reps != null ? r.avg_reps.toFixed(0) : '--'}
                 </td>
                 <td className="py-2 pr-3 text-right text-gray-500 tabular-nums">{r.sets}</td>
@@ -416,18 +409,18 @@ function SessionLog({ data }: { data: SessionRow[] }) {
           const vol = n(s.total_volume_kg)
           const color = DAY_COLOR[s.day] ?? '#9ca3af'
           return (
-            <div key={s.session_id} className="border border-gray-800 rounded-lg p-3">
+            <div key={s.session_id} className="border border-gray-200 dark:border-gray-800 rounded-lg p-3">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color }}>
                     {s.day}
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
                     {format(parseISO(s.date), 'EEE d MMM yyyy')}
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
-                  <span className="text-gray-600">{s.exercise_count} exercises · {s.total_sets} sets</span>
+                  <span className="text-gray-500 dark:text-gray-600">{s.exercise_count} exercises · {s.total_sets} sets</span>
                   {vol != null && (
                     <span className="text-orange-400 font-medium tabular-nums">
                       {vol.toLocaleString()} kg
@@ -441,7 +434,7 @@ function SessionLog({ data }: { data: SessionRow[] }) {
                 </div>
               </div>
               {s.session_notes && (
-                <p className="text-[11px] text-gray-600 leading-relaxed mt-1">{s.session_notes}</p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-600 leading-relaxed mt-1">{s.session_notes}</p>
               )}
             </div>
           )
@@ -497,7 +490,7 @@ export default function StrengthPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-5 h-5 rounded-full border-2 border-gray-700 border-t-gray-300 animate-spin" />
+        <div className="w-5 h-5 rounded-full border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 animate-spin" />
       </div>
     )
   }
@@ -505,7 +498,7 @@ export default function StrengthPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-base font-semibold text-white mb-0.5">Strength</h1>
+        <h1 className="text-base font-semibold text-gray-900 dark:text-white mb-0.5">Strength</h1>
         <p className="text-xs text-gray-500">
           Session volume · exercise progression · Push / Pull / Legs balance
         </p>
