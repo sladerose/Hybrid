@@ -113,13 +113,11 @@ function KpiCard({
 function WeeklyRunVolumeChart({ data }: { data: WeeklyRow[] }) {
   const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data]
-    .filter(d => d.run_count && Number(d.run_count) > 0)
     .reverse()
     .map(d => ({
       label: format(parseISO(d.week_start), 'MMM d'),
-      km: n(d.run_km),
-      count: n(d.run_count),
-      hr: n(d.avg_run_hr),
+      km: n(d.run_km) ?? 0,
+      hr: n(d.run_count) && n(d.run_count)! > 0 ? n(d.avg_run_hr) : null,
     }))
 
   if (!chartData.length) {
@@ -139,7 +137,7 @@ function WeeklyRunVolumeChart({ data }: { data: WeeklyRow[] }) {
     <Card>
       <ChartHeader
         title="Weekly Run Volume"
-        sub="Bars = km · line = run count · right axis = avg HR"
+        sub="Bars = km · line = avg HR (right axis)"
       />
       <ResponsiveContainer width="99%" height={260}>
         <ComposedChart data={chartData} margin={{ top: 4, right: 40, bottom: 4, left: 0 }}>
@@ -190,85 +188,57 @@ function WeeklyRunVolumeChart({ data }: { data: WeeklyRow[] }) {
 function BestEffortsChart({ data }: { data: RunRow[] }) {
   const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data]
-    .filter(d => d.best_5k || d.best_1k)
+    .filter(d => d.best_5k != null)
     .reverse()
     .map(d => ({
       label: format(parseISO(d.start_date), 'MMM d'),
       best5k: d.best_5k ? Number(d.best_5k) : null,
-      best1k: d.best_1k ? Number(d.best_1k) : null,
     }))
 
   if (!chartData.length) {
     return (
       <Card>
-        <ChartHeader title="Best Efforts" sub="lower is faster" />
+        <ChartHeader title="5k Progression" sub="lower is faster" />
         <div className="h-[240px] flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-600 text-sm">No best effort data</p>
+          <p className="text-gray-500 dark:text-gray-600 text-sm">No 5k data</p>
         </div>
       </Card>
     )
   }
 
-  const vals5k = chartData.map(d => d.best5k).filter((v): v is number => v != null)
-  const domain5k: [number, number] = vals5k.length
-    ? [Math.max(0, Math.min(...vals5k) - 120), Math.max(...vals5k) + 60]
+  const vals = chartData.map(d => d.best5k).filter((v): v is number => v != null)
+  const domain: [number, number] = vals.length
+    ? [Math.max(0, Math.min(...vals) - 90), Math.max(...vals) + 60]
     : [1400, 2100]
 
   return (
     <Card>
-      <ChartHeader title="Best Efforts" sub="lower is faster · left = 5k · right = 1k" />
+      <ChartHeader title="5k Progression" sub="best 5k time per run · lower = faster · top of chart = best" />
       <ResponsiveContainer width="99%" height={240}>
-        <LineChart data={chartData} margin={{ top: 4, right: 40, bottom: 4, left: 0 }}>
+        <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
           <XAxis dataKey="label" tick={TICK} tickLine={false} />
           <YAxis
-            yAxisId="5k"
-            domain={domain5k}
+            domain={domain}
             reversed
             tick={TICK}
             tickLine={false}
             axisLine={false}
-            width={40}
-            tickFormatter={formatTime}
-          />
-          <YAxis
-            yAxisId="1k"
-            orientation="right"
-            reversed
-            tick={TICK}
-            tickLine={false}
-            axisLine={false}
-            width={36}
+            width={44}
             tickFormatter={formatTime}
           />
           <Tooltip
             contentStyle={TIP}
             labelStyle={{ color: '#9ca3af' }}
-            formatter={(v: unknown): [string, string] => [formatTime(Number(v)), '']}
-          />
-          <Legend
-            wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-            formatter={(v: unknown) => <span style={{ color: '#9ca3af' }}>{String(v)}</span>}
+            formatter={(v: unknown): [string, string] => [formatTime(Number(v)), 'Best 5k']}
           />
           <Line
-            yAxisId="5k"
             type="monotone"
             dataKey="best5k"
             name="Best 5k"
             stroke="#3b82f6"
             strokeWidth={2}
             dot={{ r: 4, fill: '#3b82f6' }}
-            connectNulls
-          />
-          <Line
-            yAxisId="1k"
-            type="monotone"
-            dataKey="best1k"
-            name="Best 1k"
-            stroke="#8b5cf6"
-            strokeWidth={2}
-            strokeDasharray="4 4"
-            dot={{ r: 3, fill: '#8b5cf6' }}
             connectNulls
           />
         </LineChart>

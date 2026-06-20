@@ -97,10 +97,10 @@ function StatRow({ label, value, unit, accent }: { label: string; value: string;
   )
 }
 
-// ── Recovery trend chart ──────────────────────────────────────────────────────
+// ── Recovery trend charts (split into two focused charts) ─────────────────────
 
-function RecoveryTrendChart({ data }: { data: TrendRow[] }) {
-  const { TIP, GRID, TICK } = useChartTheme()
+function useTrendChartData(data: TrendRow[]) {
+  const interval = Math.max(1, Math.floor(data.length / 10))
   const chartData = [...data].reverse().map(d => ({
     label: format(parseISO(d.date), 'MMM d'),
     rhr: d.resting_hr,
@@ -112,17 +112,21 @@ function RecoveryTrendChart({ data }: { data: TrendRow[] }) {
     sleep7: n(d.sleep_7d_avg),
     bb7: n(d.bb_high_7d_avg),
   }))
+  return { chartData, interval }
+}
 
-  const interval = Math.max(1, Math.floor(chartData.length / 10))
+function BatterySleepChart({ data }: { data: TrendRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
+  const { chartData, interval } = useTrendChartData(data)
 
   return (
-    <ResponsiveContainer width="99%" height={300}>
-      <ComposedChart data={chartData} margin={{ top: 4, right: 42, bottom: 4, left: 0 }}>
+    <ResponsiveContainer width="99%" height={240}>
+      <ComposedChart data={chartData} margin={{ top: 4, right: 40, bottom: 4, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
         <XAxis dataKey="label" tick={TICK} tickLine={false} interval={interval} />
-        <YAxis yAxisId="l" domain={[20, 100]} tick={TICK} tickLine={false} axisLine={false} width={28} />
+        <YAxis yAxisId="bb" domain={[0, 100]} tick={TICK} tickLine={false} axisLine={false} width={28} />
         <YAxis
-          yAxisId="r"
+          yAxisId="sleep"
           orientation="right"
           domain={[4, 12]}
           tick={TICK}
@@ -138,22 +142,60 @@ function RecoveryTrendChart({ data }: { data: TrendRow[] }) {
             const s = String(name)
             const num = Number(v)
             if (s === 'Sleep') return [`${num.toFixed(1)}h`, s]
-            if (s === 'RHR') return [`${num} bpm`, s]
-            return [String(v), s]
+            return [String(Math.round(num)), s]
           }}
         />
         <Legend
           wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
           formatter={(v: unknown) => <span style={{ color: '#9ca3af' }}>{String(v)}</span>}
         />
-        <Line yAxisId="l" type="monotone" dataKey="bb" name="Body Battery" stroke="#10b981" strokeWidth={2} dot={false} connectNulls />
-        <Line yAxisId="l" type="monotone" dataKey="bb7" stroke="#10b981" strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />
-        <Line yAxisId="l" type="monotone" dataKey="rhr" name="RHR" stroke="#ef4444" strokeWidth={2} dot={false} connectNulls />
-        <Line yAxisId="l" type="monotone" dataKey="rhr7" stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />
-        <Line yAxisId="l" type="monotone" dataKey="stress" name="Stress" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls />
-        <Line yAxisId="l" type="monotone" dataKey="stress7" stroke="#f59e0b" strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />
-        <Line yAxisId="r" type="monotone" dataKey="sleep" name="Sleep" stroke="#8b5cf6" strokeWidth={2} dot={false} connectNulls />
-        <Line yAxisId="r" type="monotone" dataKey="sleep7" stroke="#8b5cf6" strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />
+        <Line yAxisId="bb" type="monotone" dataKey="bb" name="Body Battery" stroke="#10b981" strokeWidth={2} dot={false} connectNulls />
+        <Line yAxisId="bb" type="monotone" dataKey="bb7" name="BB 7d avg" stroke="#10b981" strokeWidth={1} strokeDasharray="5 4" strokeOpacity={0.5} dot={false} connectNulls legendType="none" />
+        <Line yAxisId="sleep" type="monotone" dataKey="sleep" name="Sleep" stroke="#8b5cf6" strokeWidth={2} dot={false} connectNulls />
+        <Line yAxisId="sleep" type="monotone" dataKey="sleep7" name="Sleep 7d avg" stroke="#8b5cf6" strokeWidth={1} strokeDasharray="5 4" strokeOpacity={0.5} dot={false} connectNulls legendType="none" />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+
+function StressRHRChart({ data }: { data: TrendRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
+  const { chartData, interval } = useTrendChartData(data)
+
+  return (
+    <ResponsiveContainer width="99%" height={240}>
+      <ComposedChart data={chartData} margin={{ top: 4, right: 40, bottom: 4, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+        <XAxis dataKey="label" tick={TICK} tickLine={false} interval={interval} />
+        <YAxis yAxisId="stress" domain={[15, 80]} tick={TICK} tickLine={false} axisLine={false} width={28} />
+        <YAxis
+          yAxisId="rhr"
+          orientation="right"
+          domain={[40, 70]}
+          tick={TICK}
+          tickLine={false}
+          axisLine={false}
+          width={32}
+          tickFormatter={(v: number) => `${v}`}
+        />
+        <Tooltip
+          contentStyle={TIP}
+          labelStyle={{ color: '#9ca3af' }}
+          formatter={(v: unknown, name: unknown): [string, string] => {
+            const s = String(name)
+            const num = Number(v)
+            if (s === 'RHR' || s === 'RHR 7d avg') return [`${Math.round(num)} bpm`, s]
+            return [String(Math.round(num)), s]
+          }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+          formatter={(v: unknown) => <span style={{ color: '#9ca3af' }}>{String(v)}</span>}
+        />
+        <Line yAxisId="stress" type="monotone" dataKey="stress" name="Stress" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls />
+        <Line yAxisId="stress" type="monotone" dataKey="stress7" name="Stress 7d avg" stroke="#f59e0b" strokeWidth={1} strokeDasharray="5 4" strokeOpacity={0.5} dot={false} connectNulls legendType="none" />
+        <Line yAxisId="rhr" type="monotone" dataKey="rhr" name="RHR" stroke="#ef4444" strokeWidth={2} dot={false} connectNulls />
+        <Line yAxisId="rhr" type="monotone" dataKey="rhr7" name="RHR 7d avg" stroke="#ef4444" strokeWidth={1} strokeDasharray="5 4" strokeOpacity={0.5} dot={false} connectNulls legendType="none" />
       </ComposedChart>
     </ResponsiveContainer>
   )
@@ -171,26 +213,20 @@ function SleepStagesChart({ data }: { data: SleepRow[] }) {
       REM: d.sleep_rem_seconds ? +(d.sleep_rem_seconds / 3600).toFixed(2) : null,
       Light: d.sleep_light_seconds ? +(d.sleep_light_seconds / 3600).toFixed(2) : null,
       Awake: d.sleep_awake_seconds ? +(d.sleep_awake_seconds / 3600).toFixed(2) : null,
-      deepPct: n(d.sleep_deep_percent),
-      remPct: n(d.sleep_rem_percent),
     }))
     .filter(d => d.Deep !== null || d.REM !== null)
 
   return (
     <ResponsiveContainer width="99%" height={280}>
-      <ComposedChart data={chartData} margin={{ top: 4, right: 38, bottom: 4, left: 0 }}>
+      <ComposedChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
         <XAxis dataKey="label" tick={TICK} tickLine={false} interval={4} />
-        <YAxis yAxisId="hrs" domain={[0, 11]} tick={TICK} tickLine={false} axisLine={false} width={28} tickFormatter={(v: number) => `${v}h`} />
-        <YAxis yAxisId="pct" orientation="right" domain={[0, 45]} tick={TICK} tickLine={false} axisLine={false} width={32} tickFormatter={(v: number) => `${v}%`} />
+        <YAxis domain={[0, 11]} tick={TICK} tickLine={false} axisLine={false} width={28} tickFormatter={(v: number) => `${v}h`} />
         <Tooltip
           contentStyle={TIP}
           labelStyle={{ color: '#9ca3af' }}
           formatter={(v: unknown, name: unknown): [string, string] => {
-            const s = String(name)
-            const num = Number(v)
-            if (s.includes('%')) return [`${num.toFixed(1)}%`, s]
-            return [`${num.toFixed(1)}h`, s]
+            return [`${Number(v).toFixed(1)}h`, String(name)]
           }}
           cursor={{ fill: GRID }}
         />
@@ -198,15 +234,32 @@ function SleepStagesChart({ data }: { data: SleepRow[] }) {
           wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
           formatter={(v: unknown) => <span style={{ color: '#9ca3af' }}>{String(v)}</span>}
         />
-        <Bar yAxisId="hrs" dataKey="Deep" stackId="s" fill="#3b82f6" />
-        <Bar yAxisId="hrs" dataKey="REM" stackId="s" fill="#8b5cf6" />
-        <Bar yAxisId="hrs" dataKey="Light" stackId="s" fill="#374151" />
-        <Bar yAxisId="hrs" dataKey="Awake" stackId="s" fill="#f59e0b" radius={[2, 2, 0, 0]} />
-        <Line yAxisId="pct" type="monotone" dataKey="deepPct" name="Deep %" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
-        <Line yAxisId="pct" type="monotone" dataKey="remPct" name="REM %" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
+        <Bar dataKey="Deep" stackId="s" fill="#3b82f6" />
+        <Bar dataKey="REM" stackId="s" fill="#8b5cf6" />
+        <Bar dataKey="Light" stackId="s" fill="#6b7280" />
+        <Bar dataKey="Awake" stackId="s" fill="#f59e0b" radius={[2, 2, 0, 0]} />
       </ComposedChart>
     </ResponsiveContainer>
   )
+}
+
+// ── Linear regression helper ──────────────────────────────────────────────────
+
+function linearRegression(points: { x: number; y: number }[]) {
+  const count = points.length
+  if (count < 5) return null
+  const sumX = points.reduce((s, p) => s + p.x, 0)
+  const sumY = points.reduce((s, p) => s + p.y, 0)
+  const sumXY = points.reduce((s, p) => s + p.x * p.y, 0)
+  const sumX2 = points.reduce((s, p) => s + p.x * p.x, 0)
+  const denom = count * sumX2 - sumX * sumX
+  if (Math.abs(denom) < 0.001) return null
+  const slope = (count * sumXY - sumX * sumY) / denom
+  const intercept = (sumY - slope * sumX) / count
+  const xs = points.map(p => p.x)
+  const x1 = Math.min(...xs)
+  const x2 = Math.max(...xs)
+  return { x1, y1: slope * x1 + intercept, x2, y2: slope * x2 + intercept }
 }
 
 // ── Scatter panel ─────────────────────────────────────────────────────────────
@@ -235,6 +288,7 @@ function ScatterPanel({
   refY?: number
 }) {
   const { TIP, GRID, TICK, LABEL_FILL } = useChartTheme()
+  const reg = linearRegression(data)
 
   if (data.length < 5) {
     return (
@@ -275,12 +329,22 @@ function ScatterPanel({
           <ZAxis range={[24, 24]} />
           <Tooltip contentStyle={TIP} />
           {refX !== undefined && (
-            <ReferenceLine x={refX} stroke="#6b7280" strokeDasharray="4 4" strokeOpacity={0.5} />
+            <ReferenceLine x={refX} stroke="#6b7280" strokeDasharray="4 4" strokeOpacity={0.5}
+              label={{ value: String(refX), position: 'insideTopRight', fill: LABEL_FILL, fontSize: 9 }} />
           )}
           {refY !== undefined && (
-            <ReferenceLine y={refY} stroke="#6b7280" strokeDasharray="4 4" strokeOpacity={0.5} />
+            <ReferenceLine y={refY} stroke="#6b7280" strokeDasharray="4 4" strokeOpacity={0.5}
+              label={{ value: String(refY), position: 'insideTopRight', fill: LABEL_FILL, fontSize: 9 }} />
           )}
           <Scatter data={data} fill={dotColor} fillOpacity={0.65} />
+          {reg && (
+            <ReferenceLine
+              segment={[{ x: reg.x1, y: reg.y1 }, { x: reg.x2, y: reg.y2 }]}
+              stroke={dotColor}
+              strokeWidth={2}
+              strokeOpacity={0.7}
+            />
+          )}
         </ScatterChart>
       </ResponsiveContainer>
     </Card>
@@ -444,21 +508,30 @@ export default function RecoveryPage() {
         </p>
       </div>
 
-      {/* Multi-signal trend */}
-      <Card>
-        <ChartHeader
-          title="Recovery Trend"
-          sub="Body battery · RHR · stress · sleep — 90 days"
-        />
-        <RecoveryTrendChart data={trend} />
-      </Card>
+      {/* Recovery trend — split into two focused charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card>
+          <ChartHeader
+            title="Battery & Sleep"
+            sub="Body battery · sleep hours — 90 days · faded = 7d avg"
+          />
+          <BatterySleepChart data={trend} />
+        </Card>
+        <Card>
+          <ChartHeader
+            title="Stress & Resting HR"
+            sub="Stress · RHR — 90 days · faded = 7d avg"
+          />
+          <StressRHRChart data={trend} />
+        </Card>
+      </div>
 
       {/* Sleep stages + summary */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
         <Card className="lg:col-span-8">
           <ChartHeader
             title="Sleep Stages"
-            sub="Last 30 nights · bars = hours · dashed = % trend (right axis)"
+            sub="Last 30 nights · Deep · REM · Light · Awake in hours"
           />
           <SleepStagesChart data={sleep} />
         </Card>

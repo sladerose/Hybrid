@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import {
   ComposedChart, LineChart, Line, Bar, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend,
+  CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -113,7 +113,7 @@ function WeightTrendChart({ data }: { data: BodyRow[] }) {
             tickLine={false}
             axisLine={false}
             width={40}
-            tickFormatter={(v: number) => `${v}`}
+            tickFormatter={(v: number) => `${v}kg`}
           />
           <Tooltip
             contentStyle={TIP}
@@ -138,93 +138,69 @@ function WeightTrendChart({ data }: { data: BodyRow[] }) {
   )
 }
 
-// ── Body Fat + Muscle Mass ────────────────────────────────────────────────────
+// ── Body Fat ──────────────────────────────────────────────────────────────────
 
-function CompositionChart({ data }: { data: BodyRow[] }) {
+function BodyFatChart({ data }: { data: BodyRow[] }) {
   const { TIP, GRID, TICK } = useChartTheme()
   const compData = data.filter(r => r.body_fat_percent != null)
+  if (!compData.length) return null
 
-  if (compData.length === 0) {
-    return (
-      <Card>
-        <ChartHeader title="Body Composition" />
-        <div className="h-[220px] flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-600 text-sm">No composition data</p>
-        </div>
-      </Card>
-    )
-  }
+  const vals = compData.map(r => n(r.body_fat_percent)).filter((v): v is number => v != null)
+  const lo = Math.floor(Math.min(...vals) - 0.5)
+  const hi = Math.ceil(Math.max(...vals) + 0.5)
 
-  const chartData = compData.map(r => ({
-    date: fmt(r.date),
-    fat: n(r.body_fat_percent),
-    muscle: n(r.muscle_mass_kg),
-  }))
+  const chartData = compData.map(r => ({ date: fmt(r.date), fat: n(r.body_fat_percent) }))
 
   return (
     <Card>
-      <ChartHeader
-        title="Body Composition"
-        sub="Body fat % (left) · muscle mass kg (right)"
-      />
-      <ResponsiveContainer width="99%" height={220}>
-        <ComposedChart data={chartData} margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
+      <ChartHeader title="Body Fat" sub="% over time" />
+      <ResponsiveContainer width="99%" height={180}>
+        <LineChart data={chartData} margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
           <XAxis dataKey="date" tick={TICK} tickLine={false} interval="preserveStartEnd" />
-          <YAxis
-            yAxisId="fat"
-            domain={[18, 22]}
-            tick={TICK}
-            tickLine={false}
-            axisLine={false}
-            width={36}
-            tickFormatter={(v: number) => `${v}%`}
-          />
-          <YAxis
-            yAxisId="muscle"
-            orientation="right"
-            domain={[52, 57]}
-            tick={TICK}
-            tickLine={false}
-            axisLine={false}
-            width={40}
-            tickFormatter={(v: number) => `${v}kg`}
-          />
+          <YAxis domain={[lo, hi]} tick={TICK} tickLine={false} axisLine={false} width={36} tickFormatter={(v: number) => `${v}%`} />
           <Tooltip
             contentStyle={TIP}
             labelStyle={{ color: '#9ca3af' }}
-            formatter={(v: unknown, name: unknown): [string, string] => [
-              name === 'fat' ? `${Number(v).toFixed(1)}%` : `${Number(v).toFixed(2)} kg`,
-              name === 'fat' ? 'Body Fat' : 'Muscle Mass',
-            ]}
+            formatter={(v: unknown): [string, string] => [`${Number(v).toFixed(1)}%`, 'Body Fat']}
           />
-          <Legend
-            iconSize={8}
-            formatter={(value: string) => (
-              <span style={{ color: '#9ca3af', fontSize: 11 }}>
-                {value === 'fat' ? 'Body Fat %' : 'Muscle Mass kg'}
-              </span>
-            )}
+          <ReferenceLine y={20} stroke="#6b7280" strokeDasharray="4 4" strokeOpacity={0.6}
+            label={{ value: 'fit range', fill: '#6b7280', fontSize: 9, position: 'insideTopRight' }} />
+          <Line dataKey="fat" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls />
+        </LineChart>
+      </ResponsiveContainer>
+    </Card>
+  )
+}
+
+// ── Muscle Mass ───────────────────────────────────────────────────────────────
+
+function MuscleMassChart({ data }: { data: BodyRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
+  const compData = data.filter(r => r.muscle_mass_kg != null)
+  if (!compData.length) return null
+
+  const vals = compData.map(r => n(r.muscle_mass_kg)).filter((v): v is number => v != null)
+  const lo = Math.floor(Math.min(...vals) - 0.5)
+  const hi = Math.ceil(Math.max(...vals) + 0.5)
+
+  const chartData = compData.map(r => ({ date: fmt(r.date), muscle: n(r.muscle_mass_kg) }))
+
+  return (
+    <Card>
+      <ChartHeader title="Muscle Mass" sub="kg over time" />
+      <ResponsiveContainer width="99%" height={180}>
+        <LineChart data={chartData} margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+          <XAxis dataKey="date" tick={TICK} tickLine={false} interval="preserveStartEnd" />
+          <YAxis domain={[lo, hi]} tick={TICK} tickLine={false} axisLine={false} width={40} tickFormatter={(v: number) => `${v}kg`} />
+          <Tooltip
+            contentStyle={TIP}
+            labelStyle={{ color: '#9ca3af' }}
+            formatter={(v: unknown): [string, string] => [`${Number(v).toFixed(2)} kg`, 'Muscle Mass']}
           />
-          <Line
-            yAxisId="fat"
-            dataKey="fat"
-            name="fat"
-            stroke="#f59e0b"
-            strokeWidth={2}
-            dot={false}
-            connectNulls
-          />
-          <Line
-            yAxisId="muscle"
-            dataKey="muscle"
-            name="muscle"
-            stroke="#10b981"
-            strokeWidth={2}
-            dot={false}
-            connectNulls
-          />
-        </ComposedChart>
+          <Line dataKey="muscle" stroke="#10b981" strokeWidth={2} dot={false} connectNulls />
+        </LineChart>
       </ResponsiveContainer>
     </Card>
   )
@@ -232,7 +208,7 @@ function CompositionChart({ data }: { data: BodyRow[] }) {
 
 // ── Visceral Fat Chart ────────────────────────────────────────────────────────
 
-function ViscerumFatChart({ data }: { data: BodyRow[] }) {
+function VisceralFatChart({ data }: { data: BodyRow[] }) {
   const { TIP, GRID, TICK } = useChartTheme()
   const compData = data.filter(r => r.visceral_fat != null)
   if (!compData.length) return null
@@ -413,14 +389,13 @@ export default function BodyPage() {
 
       {/* Composition + stats */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <CompositionChart data={data} />
-        </div>
+        <BodyFatChart data={data} />
+        <MuscleMassChart data={data} />
         <StatsPanel latest={latest} />
       </div>
 
       {/* Visceral fat */}
-      <ViscerumFatChart data={data} />
+      <VisceralFatChart data={data} />
     </div>
   )
 }

@@ -55,13 +55,13 @@ const MUSCLE_COLORS: Record<string, string> = {
   Lats: '#3b82f6',
   Chest: '#f97316',
   Quadriceps: '#8b5cf6',
-  Triceps: '#f97316',
-  Shoulders: '#f97316',
-  Biceps: '#3b82f6',
-  Traps: '#f97316',
-  Calves: '#8b5cf6',
+  Triceps: '#fb923c',
+  Shoulders: '#ef4444',
+  Biceps: '#60a5fa',
+  Traps: '#1d4ed8',
+  Calves: '#a78bfa',
   Abs: '#6b7280',
-  Glutes: '#8b5cf6',
+  Glutes: '#7c3aed',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
