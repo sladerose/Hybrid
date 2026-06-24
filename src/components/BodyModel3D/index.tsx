@@ -85,7 +85,7 @@ function MuscleChip({
       onClick={() => onSelect(isSelected ? null : group)}
       style={isSelected ? {} : {}}
       className={[
-        'relative flex flex-col gap-0.5 p-3 rounded-xl border text-left transition-all duration-150 w-full overflow-hidden',
+        'relative flex flex-col gap-0 p-2 rounded-lg border text-left transition-all duration-150 w-full overflow-hidden',
         isSelected
           ? 'border-blue-400/60 bg-blue-500/10 dark:border-blue-400/40 dark:bg-blue-500/10'
           : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/40',
@@ -98,7 +98,7 @@ function MuscleChip({
       />
       {/* Name row */}
       <div className="flex items-center justify-between pl-1">
-        <span className="text-[13px] font-semibold text-gray-800 dark:text-gray-100 leading-tight">
+        <span className="text-[11px] font-medium text-gray-800 dark:text-gray-100 leading-tight">
           {MUSCLE_LABELS[group]}
         </span>
         {recencyDot && (
@@ -108,14 +108,12 @@ function MuscleChip({
       {/* Count */}
       <div className="pl-1">
         <span
-          className="text-[22px] font-bold tabular-nums leading-none"
+          className="text-[16px] font-bold tabular-nums leading-none"
           style={{ color: s28 > 0 ? col : '#4b6a8a' }}
         >
           {s28 > 0 ? s28 : '0'}
         </span>
-        <span className="text-[10px] text-gray-400 dark:text-gray-600 ml-1">
-          {s28 === 1 ? 'session' : 'sessions'}
-        </span>
+        <span className="text-[9px] text-gray-400 dark:text-gray-600 ml-1">sess</span>
       </div>
     </button>
   )
@@ -145,7 +143,7 @@ function DetailPanel({
   }
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+    <div>
       {/* Title + close */}
       <div className="flex items-start justify-between mb-2">
         <div>
@@ -250,9 +248,9 @@ export function BodyModel3D({ exerciseData }: BodyModel3DProps) {
       <div className="flex flex-col lg:flex-row">
 
         {/* 3D Canvas */}
-        <div className="relative lg:w-[52%] h-[400px] lg:h-[460px]">
+        <div className="relative lg:w-[40%] h-[320px] lg:h-[380px]">
           <Canvas
-            camera={{ position: [0, 0.2, 3.4], fov: 56 }}
+            camera={{ position: [0, 0.24, 3.1], fov: 56 }}
             dpr={[1, 2]}
             gl={{ antialias: true, alpha: false }}
             style={{ width: '100%', height: '100%' }}
@@ -277,35 +275,8 @@ export function BodyModel3D({ exerciseData }: BodyModel3DProps) {
           </div>
         </div>
 
-        {/* Right panel: chip grid + detail */}
-        <div className="flex-1 border-t lg:border-t-0 lg:border-l border-gray-100 dark:border-gray-800 p-4 flex flex-col">
-
-          {/* PPL-grouped chip grid */}
-          <div className="space-y-4 overflow-y-auto">
-            {MUSCLE_GROUPS.map(grp => (
-              <div key={grp.label}>
-                <p
-                  className="text-[11px] font-bold uppercase tracking-widest mb-2"
-                  style={{ color: grp.color }}
-                >
-                  {grp.label}
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {grp.muscles.map(group => (
-                    <MuscleChip
-                      key={group}
-                      group={group}
-                      stats={stats}
-                      isSelected={selectedGroup === group}
-                      onSelect={setSelectedGroup}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Detail panel or hint */}
+        {/* Right panel: chip grid OR detail view — swaps, never expands */}
+        <div className="flex-1 border-t lg:border-t-0 lg:border-l border-gray-100 dark:border-gray-800 p-4 overflow-y-auto">
           {selectedGroup ? (
             <DetailPanel
               group={selectedGroup}
@@ -313,11 +284,34 @@ export function BodyModel3D({ exerciseData }: BodyModel3DProps) {
               onClose={() => setSelectedGroup(null)}
             />
           ) : (
-            <div className="flex-1 flex items-end">
-              <p className="text-[10px] text-gray-400 dark:text-gray-700 leading-relaxed mt-4">
+            <>
+              <div className="space-y-3">
+                {MUSCLE_GROUPS.map(grp => (
+                  <div key={grp.label}>
+                    <p
+                      className="text-[11px] font-bold uppercase tracking-widest mb-1.5"
+                      style={{ color: grp.color }}
+                    >
+                      {grp.label}
+                    </p>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {grp.muscles.map(group => (
+                        <MuscleChip
+                          key={group}
+                          group={group}
+                          stats={stats}
+                          isSelected={selectedGroup === group}
+                          onSelect={setSelectedGroup}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-gray-400 dark:text-gray-700 leading-relaxed mt-3">
                 Click a muscle on the model or above to inspect training detail.
               </p>
-            </div>
+            </>
           )}
         </div>
       </div>

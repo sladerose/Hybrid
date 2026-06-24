@@ -269,7 +269,7 @@ function MuscleGroupChart({ data }: { data: ExerciseRow[] }) {
   return (
     <Card>
       <ChartHeader title="Volume by Muscle Group" sub="Cumulative kg lifted across all sessions" />
-      <ResponsiveContainer width="99%" height={Math.max(180, chartData.length * 32)}>
+      <ResponsiveContainer width="99%" height={Math.max(160, chartData.length * 28)}>
         <BarChart
           data={chartData}
           layout="vertical"
@@ -544,11 +544,11 @@ export default function StrengthPage() {
         <PPLBalanceChart data={sessions} />
       </div>
 
-      {/* Muscle group volume */}
-      <MuscleGroupChart data={exercises} />
-
-      {/* Exercise progression */}
-      <ExerciseProgressionTable data={exercises} />
+      {/* Muscle group volume + exercise progression */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <MuscleGroupChart data={exercises} />
+        <ExerciseProgressionTable data={exercises} />
+      </div>
 
       {/* Session log */}
       {sessions.length > 0 && <SessionLog data={sessions} />}

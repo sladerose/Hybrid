@@ -66,6 +66,7 @@ export function HumanFigure({ stats, selectedGroup, onSelect, isDark }: Props) {
       {/* Camera controls */}
       <OrbitControls
         ref={controlsRef}
+        target={new THREE.Vector3(0, 0.24, 0)}
         autoRotate
         autoRotateSpeed={0.6}
         enableZoom={false}

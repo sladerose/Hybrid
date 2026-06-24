@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { format, parseISO } from 'date-fns'
+import {
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
+} from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { useChartTheme } from '../lib/chartTheme'
 import {
   bodyBatteryColor, rhrColor, sleepColor, stressColor,
   vigorousMinsColor, vigorousMinsBg,
@@ -182,6 +186,110 @@ function WeekCard({
   )
 }
 
+// ── Readiness Radar ───────────────────────────────────────────────────────────
+
+const RADAR_SIGNAL: Record<string, string> = {
+  green: '#10b981',
+  amber: '#f59e0b',
+  red:   '#ef4444',
+}
+
+function ReadinessRadar({
+  readiness,
+  week,
+}: {
+  readiness: ReadinessRow | null
+  week: WeekRow | null
+}) {
+  const { GRID, TICK } = useChartTheme()
+
+  const sig       = readiness?.readiness_signal ?? 'amber'
+  const fillColor = RADAR_SIGNAL[sig] ?? '#f59e0b'
+  const sigLabel  = sig === 'green' ? 'Ready' : sig === 'red' ? 'Rest day' : 'Take it easy'
+
+  const rhr       = readiness?.resting_hr ?? 55
+  const heartScore = Math.max(0, Math.min(100, ((65 - rhr) / 20) * 100))
+
+  const vigMin       = n(week?.total_vigorous_min) ?? 0
+  const activityScore = Math.min(100, (vigMin / 75) * 100)
+
+  const axes = [
+    { axis: 'Sleep',    score: Math.round(n(readiness?.sleep_score)    ?? 0) },
+    { axis: 'Recovery', score: Math.round(readiness?.bb_score          ?? 0) },
+    { axis: 'Heart',    score: Math.round(heartScore) },
+    { axis: 'Stress',   score: Math.round(readiness?.stress_score      ?? 0) },
+    { axis: 'Activity', score: Math.round(activityScore) },
+  ]
+
+  const overallScore = Math.round(n(readiness?.readiness_score) ?? 0)
+
+  function axisBarColor(score: number): string {
+    if (score >= 70) return '#10b981'
+    if (score >= 50) return '#f59e0b'
+    return '#ef4444'
+  }
+
+  return (
+    <Card>
+      <div className="flex flex-col lg:flex-row gap-2 lg:gap-6">
+
+        {/* Radar chart */}
+        <div className="w-full lg:w-[220px] h-[200px] flex-shrink-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <RadarChart data={axes} margin={{ top: 12, right: 24, bottom: 12, left: 24 }}>
+              <PolarGrid stroke={GRID} />
+              <PolarAngleAxis
+                dataKey="axis"
+                tick={{ fontSize: 10, fill: TICK.fill, fontWeight: 500 }}
+              />
+              <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+              <Radar
+                dataKey="score"
+                stroke={fillColor}
+                fill={fillColor}
+                fillOpacity={0.22}
+                strokeWidth={2}
+              />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Score breakdown */}
+        <div className="flex-1 flex flex-col justify-center">
+          {/* Overall */}
+          <div className="flex items-baseline gap-2 mb-4">
+            <span className="text-4xl font-bold tabular-nums" style={{ color: fillColor }}>
+              {overallScore || '--'}
+            </span>
+            <div>
+              <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">Readiness</p>
+              <p className="text-[11px] font-semibold" style={{ color: fillColor }}>{sigLabel}</p>
+            </div>
+          </div>
+
+          {/* Axis bars */}
+          <div className="space-y-2.5">
+            {axes.map(a => (
+              <div key={a.axis}>
+                <div className="flex justify-between items-baseline mb-0.5">
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">{a.axis}</span>
+                  <span className="text-[11px] font-medium tabular-nums text-gray-700 dark:text-gray-300">{a.score}</span>
+                </div>
+                <div className="h-1 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${a.score}%`, backgroundColor: axisBarColor(a.score) }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 
 type HeatmapMode = 'steps' | 'calories' | 'vigorous' | 'count'
@@ -357,14 +465,6 @@ function ActivityHeatmap({ data, today }: { data: HeatmapRow[]; today: string })
   )
 }
 
-// ── Readiness badge config ────────────────────────────────────────────────────
-
-const SIGNAL_CONFIG = {
-  green: { label: 'Ready', color: '#10b981', border: 'border-emerald-700' },
-  amber: { label: 'Take it easy', color: '#f59e0b', border: 'border-amber-700' },
-  red: { label: 'Rest day', color: '#ef4444', border: 'border-red-800' },
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -423,10 +523,6 @@ export default function DashboardPage() {
     )
   }
 
-  const sig = readiness?.readiness_signal
-    ? SIGNAL_CONFIG[readiness.readiness_signal]
-    : null
-
   const rhrDelta = delta(
     readiness?.resting_hr != null && readiness?.last_7_days_avg_resting_hr != null
       ? readiness.resting_hr - readiness.last_7_days_avg_resting_hr
@@ -442,24 +538,17 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-base font-semibold text-gray-900 dark:text-white">Dashboard</h1>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {readiness?.date
-              ? format(parseISO(readiness.date), 'EEEE, d MMMM yyyy')
-              : format(new Date(), 'EEEE, d MMMM yyyy')}
-          </p>
-        </div>
-        {sig && (
-          <div
-            className={`px-3 py-1 rounded-lg border text-xs font-semibold tracking-wide ${sig.border}`}
-            style={{ color: sig.color }}
-          >
-            {sig.label}
-          </div>
-        )}
+      <div>
+        <h1 className="text-base font-semibold text-gray-900 dark:text-white">Dashboard</h1>
+        <p className="text-xs text-gray-500 mt-0.5">
+          {readiness?.date
+            ? format(parseISO(readiness.date), 'EEEE, d MMMM yyyy')
+            : format(new Date(), 'EEEE, d MMMM yyyy')}
+        </p>
       </div>
+
+      {/* Readiness Radar */}
+      <ReadinessRadar readiness={readiness} week={week} />
 
       {/* Signal cards */}
       <div>
