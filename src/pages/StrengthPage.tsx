@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { sessionRatingColor } from '../lib/rag'
 import { useChartTheme } from '../lib/chartTheme'
+import { BodyModel3D } from '../components/BodyModel3D'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -533,6 +534,9 @@ export default function StrengthPage() {
           sub={ratedSessions.length < sessions.length ? `${ratedSessions.length}/${sessions.length} rated` : undefined}
         />
       </div>
+
+      {/* 3D Muscle Map */}
+      <BodyModel3D exerciseData={exercises} />
 
       {/* Volume bar + PPL balance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
