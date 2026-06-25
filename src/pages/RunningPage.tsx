@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, startOfWeek } from 'date-fns'
 import {
-  ComposedChart, LineChart,
-  Line, Bar,
+  ComposedChart, LineChart, ScatterChart,
+  Line, Bar, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
+  PieChart, Pie, Cell,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -50,6 +51,27 @@ type GearRow = {
   model_name: string | null
   retired: boolean
   total_distance_meters: string | null
+}
+
+type ZoneRow = {
+  hr_z1_max: number
+  hr_z2_min: number; hr_z2_max: number
+  hr_z3_min: number; hr_z3_max: number
+  hr_z4_min: number; hr_z4_max: number
+  hr_z5_min: number
+  run_z1_max: string
+  run_z2_max: string
+  run_z3_max: string
+  run_z4_max: string
+  run_z5_max: string
+}
+
+type EffortRow = {
+  id: number
+  sport_type: string
+  start_date: string
+  relative_effort: number | null
+  duration_seconds: number | null
 }
 
 // ── Training Plan Types & Data ───────────────────────────────────────────────
@@ -839,6 +861,279 @@ function TrainingPlanSection({ runs }: { runs: RunRow[] }) {
   )
 }
 
+// ── HR Zone Distribution ──────────────────────────────────────────────────────
+
+const HR_ZONES = [
+  { label: 'Z1 Recovery',  color: '#60a5fa' },
+  { label: 'Z2 Aerobic',   color: '#34d399' },
+  { label: 'Z3 Threshold', color: '#fbbf24' },
+  { label: 'Z4 Anaerobic', color: '#fb923c' },
+  { label: 'Z5 Max',       color: '#f87171' },
+]
+
+function hrZoneIndex(hr: number, z: ZoneRow): number {
+  if (hr <= z.hr_z1_max) return 0
+  if (hr <= z.hr_z2_max) return 1
+  if (hr <= z.hr_z3_max) return 2
+  if (hr <= z.hr_z4_max) return 3
+  return 4
+}
+
+function HRZoneChart({ runs, zones }: { runs: RunRow[]; zones: ZoneRow }) {
+  const { TIP } = useChartTheme()
+  const runsWithHR = runs.filter(r => {
+    const hr = n(r.avg_hr)
+    return hr != null && hr > 60
+  })
+
+  const counts = [0, 0, 0, 0, 0]
+  runsWithHR.forEach(r => { counts[hrZoneIndex(n(r.avg_hr)!, zones)]++ })
+
+  const pieData = HR_ZONES
+    .map((z, i) => ({ name: z.label, value: counts[i], color: z.color }))
+    .filter(d => d.value > 0)
+
+  const zoneBounds = [
+    `≤${zones.hr_z1_max}`,
+    `${zones.hr_z2_min}–${zones.hr_z2_max}`,
+    `${zones.hr_z3_min}–${zones.hr_z3_max}`,
+    `${zones.hr_z4_min}–${zones.hr_z4_max}`,
+    `≥${zones.hr_z5_min}`,
+  ]
+
+  if (!runsWithHR.length) {
+    return (
+      <Card>
+        <ChartHeader title="HR Zone Distribution" sub="No runs with heart rate data yet" />
+        <div className="h-[160px] flex items-center justify-center">
+          <p className="text-gray-500 text-sm">No data</p>
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <ChartHeader
+        title="HR Zone Distribution"
+        sub={`${runsWithHR.length} runs with HR data · zones sourced from Strava`}
+      />
+      <div className="flex gap-4 items-center">
+        <div className="w-[130px] h-[130px] shrink-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={pieData}
+                cx="50%"
+                cy="50%"
+                innerRadius={38}
+                outerRadius={60}
+                dataKey="value"
+                stroke="none"
+              >
+                {pieData.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={TIP}
+                formatter={(v: number, name: string): [string, string] => [`${v} run${v !== 1 ? 's' : ''}`, name]}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="flex-1 space-y-2 min-w-0">
+          {HR_ZONES.map((z, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: z.color }} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[11px] text-gray-500 truncate">{z.label}</span>
+                  <span className="text-[11px] font-medium text-gray-400 shrink-0">{counts[i]}</span>
+                </div>
+                <div className="text-[10px] text-gray-600 dark:text-gray-700">{zoneBounds[i]} bpm</div>
+                {counts[i] > 0 && (
+                  <div className="mt-0.5 h-0.5 rounded-full bg-gray-200 dark:bg-gray-800">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${(counts[i] / runsWithHR.length) * 100}%`, backgroundColor: z.color }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 flex flex-wrap gap-1">
+        {runsWithHR.slice(0, 12).map(r => {
+          const zi = hrZoneIndex(n(r.avg_hr)!, zones)
+          const z = HR_ZONES[zi]
+          return (
+            <span
+              key={r.activity_id}
+              title={`${r.name} · ${Math.round(n(r.avg_hr)!)} bpm`}
+              className="text-[10px] px-1.5 py-0.5 rounded font-medium cursor-default"
+              style={{ color: z.color, backgroundColor: `${z.color}20` }}
+            >
+              {Math.round(n(r.avg_hr)!)}
+            </span>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+// ── Run Efficiency Scatter ────────────────────────────────────────────────────
+
+function RunEfficiencyScatter({ runs, zones }: { runs: RunRow[]; zones: ZoneRow }) {
+  const { TIP, GRID, TICK, LABEL_FILL } = useChartTheme()
+
+  const scatterData = runs
+    .filter(r => {
+      const hr = n(r.avg_hr)
+      const pace = n(r.pace_sec_per_km)
+      return hr != null && hr > 80 && pace != null && pace > 100 && pace < 600
+    })
+    .map(r => ({
+      pace: Math.round(n(r.pace_sec_per_km)!),
+      hr: Math.round(n(r.avg_hr)!),
+      date: r.start_date,
+      name: r.name,
+    }))
+    .reverse()
+
+  const formatPace = (v: number) => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`
+
+  if (scatterData.length < 3) {
+    return (
+      <Card>
+        <ChartHeader title="Run Efficiency" sub="Needs 3+ runs with HR — building up" />
+        <div className="h-[200px] flex items-center justify-center">
+          <p className="text-gray-500 text-sm">Not enough data yet</p>
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <ChartHeader
+        title="Run Efficiency"
+        sub="Avg HR vs pace · lower-right = faster at lower effort"
+      />
+      <ResponsiveContainer width="99%" height={220}>
+        <ScatterChart margin={{ top: 8, right: 12, bottom: 20, left: 0 }}>
+          <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
+          <XAxis
+            dataKey="pace"
+            type="number"
+            name="Pace"
+            domain={['auto', 'auto']}
+            tickFormatter={formatPace}
+            tick={TICK}
+            label={{ value: 'Pace (min/km)', position: 'insideBottom', offset: -10, fontSize: 10, fill: LABEL_FILL }}
+          />
+          <YAxis
+            dataKey="hr"
+            type="number"
+            name="HR"
+            domain={['auto', 'auto']}
+            tick={TICK}
+            width={32}
+          />
+          <Tooltip
+            contentStyle={TIP}
+            content={({ payload }) => {
+              if (!payload?.length) return null
+              const d = payload[0]?.payload
+              if (!d) return null
+              return (
+                <div style={TIP} className="p-2 rounded text-xs space-y-0.5">
+                  <p className="font-medium">{d.name}</p>
+                  <p>Pace: {formatPace(d.pace)}/km</p>
+                  <p>HR: {d.hr} bpm</p>
+                  <p className="text-gray-500">{format(parseISO(d.date), 'dd MMM yyyy')}</p>
+                </div>
+              )
+            }}
+          />
+          <ReferenceLine y={zones.hr_z1_max} stroke="#60a5fa" strokeWidth={0.5} strokeDasharray="4 4" label={{ value: 'Z1', fill: '#60a5fa', fontSize: 9, position: 'right' }} />
+          <ReferenceLine y={zones.hr_z2_max} stroke="#34d399" strokeWidth={0.5} strokeDasharray="4 4" label={{ value: 'Z2', fill: '#34d399', fontSize: 9, position: 'right' }} />
+          <ReferenceLine y={zones.hr_z3_max} stroke="#fbbf24" strokeWidth={0.5} strokeDasharray="4 4" label={{ value: 'Z3', fill: '#fbbf24', fontSize: 9, position: 'right' }} />
+          <ReferenceLine y={zones.hr_z4_max} stroke="#fb923c" strokeWidth={0.5} strokeDasharray="4 4" label={{ value: 'Z4', fill: '#fb923c', fontSize: 9, position: 'right' }} />
+          <Scatter data={scatterData} fill="#3b82f6" fillOpacity={0.75} r={5} />
+        </ScatterChart>
+      </ResponsiveContainer>
+      <p className="text-[10px] text-gray-500 dark:text-gray-600 mt-1">
+        As fitness builds, dots shift right (faster) or down (lower HR). Dashed lines = HR zone boundaries.
+      </p>
+    </Card>
+  )
+}
+
+// ── Training Load Chart ───────────────────────────────────────────────────────
+
+function TrainingLoadChart({ efforts }: { efforts: EffortRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
+
+  const weekMap = new Map<string, { run: number; workout: number; walk: number }>()
+  efforts.forEach(e => {
+    if (!e.relative_effort) return
+    const d = parseISO(e.start_date)
+    const ws = format(startOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+    if (!weekMap.has(ws)) weekMap.set(ws, { run: 0, workout: 0, walk: 0 })
+    const w = weekMap.get(ws)!
+    if (e.sport_type === 'Run') w.run += e.relative_effort
+    else if (e.sport_type === 'Workout') w.workout += e.relative_effort
+    else if (e.sport_type === 'Walk') w.walk += e.relative_effort
+  })
+
+  const chartData = [...weekMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-20)
+    .map(([ws, v]) => ({
+      label: format(parseISO(ws), 'MMM d'),
+      Run: v.run || null,
+      Strength: v.workout || null,
+      Walk: v.walk || null,
+    }))
+
+  if (!chartData.length) return null
+
+  return (
+    <Card>
+      <ChartHeader
+        title="Training Load"
+        sub="Strava relative effort by activity type · last 20 weeks"
+      />
+      <ResponsiveContainer width="99%" height={220}>
+        <ComposedChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+          <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="label" tick={TICK} tickLine={false} interval="preserveStartEnd" />
+          <YAxis tick={TICK} tickLine={false} axisLine={false} width={28} />
+          <Tooltip
+            contentStyle={TIP}
+            formatter={(v: unknown, name: unknown): [string, string] => [`${Number(v)} pts`, String(name)]}
+          />
+          <Bar dataKey="Run"      stackId="a" fill="#3b82f6" name="Run"      radius={[0,0,0,0]} maxBarSize={40} />
+          <Bar dataKey="Strength" stackId="a" fill="#f97316" name="Strength" radius={[0,0,0,0]} maxBarSize={40} />
+          <Bar dataKey="Walk"     stackId="a" fill="#8b5cf6" name="Walk"     radius={[3,3,0,0]} maxBarSize={40} />
+        </ComposedChart>
+      </ResponsiveContainer>
+      <div className="flex gap-4 mt-2">
+        {[['Run', '#3b82f6'], ['Strength', '#f97316'], ['Walk', '#8b5cf6']].map(([label, color]) => (
+          <div key={label} className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: color }} />
+            {label}
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function RunningPage() {
@@ -846,6 +1141,8 @@ export default function RunningPage() {
   const [runs, setRuns] = useState<RunRow[]>([])
   const [weeks, setWeeks] = useState<WeeklyRow[]>([])
   const [gear, setGear] = useState<GearRow[]>([])
+  const [zones, setZones] = useState<ZoneRow | null>(null)
+  const [efforts, setEfforts] = useState<EffortRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -869,10 +1166,23 @@ export default function RunningPage() {
         .select('id,gear_type,name,brand,model_name,retired,total_distance_meters')
         .eq('user_id', uid)
         .order('total_distance_meters', { ascending: false }),
-    ]).then(([r, w, g]) => {
+      supabase
+        .from('strava_zones')
+        .select('hr_z1_max,hr_z2_min,hr_z2_max,hr_z3_min,hr_z3_max,hr_z4_min,hr_z4_max,hr_z5_min,run_z1_max,run_z2_max,run_z3_max,run_z4_max,run_z5_max')
+        .eq('user_id', uid)
+        .single(),
+      supabase
+        .from('strava_activities')
+        .select('id,sport_type,start_date,relative_effort,duration_seconds')
+        .eq('user_id', uid)
+        .not('relative_effort', 'is', null)
+        .order('start_date', { ascending: true }),
+    ]).then(([r, w, g, z, e]) => {
       setRuns(r.data ?? [])
       setWeeks(w.data ?? [])
       setGear(g.data ?? [])
+      setZones(z.data ?? null)
+      setEfforts(e.data ?? [])
       setLoading(false)
     })
   }, [user])
@@ -951,6 +1261,17 @@ export default function RunningPage() {
         <BestEffortsChart data={runs} />
         <CadenceTrendChart data={runs} />
       </div>
+
+      {/* HR zones + efficiency */}
+      {zones && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <HRZoneChart runs={runs} zones={zones} />
+          <RunEfficiencyScatter runs={runs} zones={zones} />
+        </div>
+      )}
+
+      {/* Training load */}
+      {efforts.length > 0 && <TrainingLoadChart efforts={efforts} />}
 
       {/* Lap breakdown */}
       {latestRunWithLaps && <LapBreakdownChart run={latestRunWithLaps} />}
