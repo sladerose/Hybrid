@@ -3,12 +3,64 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 
 const NAV = [
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/recovery', label: 'Recovery' },
-  { to: '/running', label: 'Running' },
-  { to: '/strength', label: 'Strength' },
-  { to: '/body', label: 'Body' },
+  { to: '/dashboard', label: 'Dashboard', Icon: DashIcon },
+  { to: '/recovery', label: 'Recovery', Icon: RecoveryIcon },
+  { to: '/running', label: 'Running', Icon: RunIcon },
+  { to: '/strength', label: 'Strength', Icon: StrengthIcon },
+  { to: '/body', label: 'Body', Icon: BodyIcon },
 ]
+
+function DashIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  )
+}
+
+function RecoveryIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  )
+}
+
+function RunIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="13" cy="4" r="1.5" />
+      <path d="M6 20l3.5-7 2.5 3 3-4 3 5" />
+      <path d="M11 9l2-3 4 1" />
+    </svg>
+  )
+}
+
+function StrengthIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="7" y1="12" x2="17" y2="12" />
+      <line x1="7" y1="8" x2="7" y2="16" />
+      <line x1="17" y1="8" x2="17" y2="16" />
+      <line x1="3" y1="9" x2="3" y2="15" />
+      <line x1="21" y1="9" x2="21" y2="15" />
+      <line x1="3" y1="12" x2="7" y2="12" />
+      <line x1="17" y1="12" x2="21" y2="12" />
+    </svg>
+  )
+}
+
+function BodyIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  )
+}
 
 function SunIcon() {
   return (
@@ -40,7 +92,9 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden">
-      <aside className="w-48 shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-800">
+
+      {/* Sidebar — desktop only */}
+      <aside className="hidden md:flex w-48 shrink-0 flex-col border-r border-gray-200 dark:border-gray-800">
         <div className="px-5 h-14 flex items-center border-b border-gray-200 dark:border-gray-800">
           <span className="text-xl">🍑</span>
         </div>
@@ -83,11 +137,49 @@ export default function Layout() {
         </div>
       </aside>
 
+      {/* Main content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="px-6 py-6">
+        {/* Mobile header */}
+        <div className="md:hidden flex items-center justify-between px-4 h-12 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10 bg-gray-50 dark:bg-gray-950">
+          <span className="text-lg">🍑</span>
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors cursor-pointer"
+          >
+            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </div>
+
+        <div className="px-4 py-4 md:px-6 md:py-6 pb-24 md:pb-6">
           <Outlet />
         </div>
       </main>
+
+      {/* Bottom nav — mobile only */}
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-50 dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="flex">
+          {NAV.map(({ to, label, Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                `flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] transition-colors ${
+                  isActive
+                    ? 'text-blue-500'
+                    : 'text-gray-400 dark:text-gray-600'
+                }`
+              }
+            >
+              <Icon />
+              {label}
+            </NavLink>
+          ))}
+        </div>
+      </nav>
     </div>
   )
 }

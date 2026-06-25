@@ -42,6 +42,157 @@ type WeeklyRow = {
   avg_relative_effort: string | null
 }
 
+type GearRow = {
+  id: string
+  gear_type: string
+  name: string
+  brand: string | null
+  model_name: string | null
+  retired: boolean
+  total_distance_meters: string | null
+}
+
+// ── Training Plan Types & Data ───────────────────────────────────────────────
+
+type WorkoutType = 'easy' | 'tempo' | 'intervals' | 'long' | 'race' | 'rest' | 'strides'
+
+type PlanDay = {
+  day: string
+  date: string
+  type: WorkoutType
+  label: string
+  km: number
+  description?: string
+}
+
+type PlanWeek = {
+  weekNum: number
+  phase: 'Base' | 'Build' | 'Peak' | 'Taper' | 'Race'
+  start: string
+  days: PlanDay[]
+}
+
+const RACE_DATE = '2026-08-15'
+const RACE_NAME = 'Garmin Run Series 10km'
+const PLAN_TOTAL_DAYS = 54
+
+const WORKOUT_STYLES: Record<WorkoutType, { dot: string; badge: string; text: string }> = {
+  easy:      { dot: 'bg-blue-400',   badge: 'bg-blue-500/10 border-blue-500/30',     text: 'text-blue-400'   },
+  long:      { dot: 'bg-purple-400', badge: 'bg-purple-500/10 border-purple-500/30', text: 'text-purple-400' },
+  tempo:     { dot: 'bg-amber-400',  badge: 'bg-amber-500/10 border-amber-500/30',   text: 'text-amber-400'  },
+  intervals: { dot: 'bg-red-400',    badge: 'bg-red-500/10 border-red-500/30',       text: 'text-red-400'    },
+  strides:   { dot: 'bg-orange-400', badge: 'bg-orange-500/10 border-orange-500/30', text: 'text-orange-400' },
+  race:      { dot: 'bg-green-400',  badge: 'bg-green-500/10 border-green-500/30',   text: 'text-green-400'  },
+  rest:      { dot: 'bg-gray-600',   badge: 'border-transparent',                    text: 'text-gray-600'   },
+}
+
+const PHASE_STYLE: Record<PlanWeek['phase'], string> = {
+  Base:  'text-blue-400',
+  Build: 'text-amber-400',
+  Peak:  'text-red-400',
+  Taper: 'text-purple-400',
+  Race:  'text-green-400',
+}
+
+const TRAINING_PLAN: PlanWeek[] = [
+  {
+    weekNum: 1, phase: 'Base', start: '2026-06-22',
+    days: [
+      { day: 'Mon', date: '2026-06-22', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Tue', date: '2026-06-23', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Wed', date: '2026-06-24', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Thu', date: '2026-06-25', type: 'easy',  label: 'Easy',  km: 3, description: 'Conversational pace. Get legs moving after the break.' },
+      { day: 'Fri', date: '2026-06-26', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Sat', date: '2026-06-27', type: 'easy',  label: 'Easy',  km: 4, description: 'Easy effort. No watch pressure.' },
+      { day: 'Sun', date: '2026-06-28', type: 'rest',  label: 'Rest',  km: 0 },
+    ],
+  },
+  {
+    weekNum: 2, phase: 'Base', start: '2026-06-29',
+    days: [
+      { day: 'Mon', date: '2026-06-29', type: 'rest',    label: 'Rest',    km: 0 },
+      { day: 'Tue', date: '2026-06-30', type: 'easy',    label: 'Easy',    km: 4 },
+      { day: 'Wed', date: '2026-07-01', type: 'rest',    label: 'Rest',    km: 0 },
+      { day: 'Thu', date: '2026-07-02', type: 'strides', label: 'Strides', km: 3, description: '2km easy warmup + 6×20s strides + 1km cooldown.' },
+      { day: 'Fri', date: '2026-07-03', type: 'rest',    label: 'Rest',    km: 0 },
+      { day: 'Sat', date: '2026-07-04', type: 'long',    label: 'Long',    km: 5, description: '5km easy. Consistent effort throughout.' },
+      { day: 'Sun', date: '2026-07-05', type: 'rest',    label: 'Rest',    km: 0 },
+    ],
+  },
+  {
+    weekNum: 3, phase: 'Build', start: '2026-07-06',
+    days: [
+      { day: 'Mon', date: '2026-07-06', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Tue', date: '2026-07-07', type: 'easy',  label: 'Easy',  km: 4 },
+      { day: 'Wed', date: '2026-07-08', type: 'tempo', label: 'Tempo', km: 4, description: '1km easy + 20min tempo + 1km easy. Comfortably hard effort.' },
+      { day: 'Thu', date: '2026-07-09', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Fri', date: '2026-07-10', type: 'easy',  label: 'Easy',  km: 4 },
+      { day: 'Sat', date: '2026-07-11', type: 'long',  label: 'Long',  km: 6, description: '6km. Run the last 2km at marathon effort.' },
+      { day: 'Sun', date: '2026-07-12', type: 'rest',  label: 'Rest',  km: 0 },
+    ],
+  },
+  {
+    weekNum: 4, phase: 'Build', start: '2026-07-13',
+    days: [
+      { day: 'Mon', date: '2026-07-13', type: 'rest',      label: 'Rest',   km: 0 },
+      { day: 'Tue', date: '2026-07-14', type: 'easy',      label: 'Easy',   km: 4 },
+      { day: 'Wed', date: '2026-07-15', type: 'intervals', label: '5×400m', km: 4, description: '1km warmup + 5×400m at 5k effort with 90s rest + 1km cooldown.' },
+      { day: 'Thu', date: '2026-07-16', type: 'rest',      label: 'Rest',   km: 0 },
+      { day: 'Fri', date: '2026-07-17', type: 'tempo',     label: 'Tempo',  km: 5, description: '1km easy + 25min at 10k goal pace + 1km easy.' },
+      { day: 'Sat', date: '2026-07-18', type: 'long',      label: 'Long',   km: 7, description: '7km easy. Longest run yet — go slow and enjoy it.' },
+      { day: 'Sun', date: '2026-07-19', type: 'rest',      label: 'Rest',   km: 0 },
+    ],
+  },
+  {
+    weekNum: 5, phase: 'Peak', start: '2026-07-20',
+    days: [
+      { day: 'Mon', date: '2026-07-20', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Tue', date: '2026-07-21', type: 'easy',  label: 'Easy',  km: 5 },
+      { day: 'Wed', date: '2026-07-22', type: 'tempo', label: 'Tempo', km: 6, description: '1km easy + 30min at 10k goal pace + 1km easy. This is your race effort.' },
+      { day: 'Thu', date: '2026-07-23', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Fri', date: '2026-07-24', type: 'easy',  label: 'Easy',  km: 4 },
+      { day: 'Sat', date: '2026-07-25', type: 'long',  label: 'Long',  km: 8, description: '8km easy. Peak long run. Controlled and confident.' },
+      { day: 'Sun', date: '2026-07-26', type: 'rest',  label: 'Rest',  km: 0 },
+    ],
+  },
+  {
+    weekNum: 6, phase: 'Taper', start: '2026-07-27',
+    days: [
+      { day: 'Mon', date: '2026-07-27', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Tue', date: '2026-07-28', type: 'easy',  label: 'Easy',  km: 4 },
+      { day: 'Wed', date: '2026-07-29', type: 'tempo', label: 'Tempo', km: 3, description: 'Short 15min tempo. Sharp effort, not long.' },
+      { day: 'Thu', date: '2026-07-30', type: 'rest',  label: 'Rest',  km: 0 },
+      { day: 'Fri', date: '2026-07-31', type: 'easy',  label: 'Easy',  km: 3 },
+      { day: 'Sat', date: '2026-08-01', type: 'long',  label: 'Long',  km: 6, description: '6km. Reduced volume. Legs should feel fresh.' },
+      { day: 'Sun', date: '2026-08-02', type: 'rest',  label: 'Rest',  km: 0 },
+    ],
+  },
+  {
+    weekNum: 7, phase: 'Taper', start: '2026-08-03',
+    days: [
+      { day: 'Mon', date: '2026-08-03', type: 'rest',    label: 'Rest',    km: 0 },
+      { day: 'Tue', date: '2026-08-04', type: 'easy',    label: 'Easy',    km: 3 },
+      { day: 'Wed', date: '2026-08-05', type: 'strides', label: 'Strides', km: 2, description: '10min easy + 4×20s strides. Activate, do not fatigue.' },
+      { day: 'Thu', date: '2026-08-06', type: 'rest',    label: 'Rest',    km: 0 },
+      { day: 'Fri', date: '2026-08-07', type: 'easy',    label: 'Easy',    km: 2, description: 'Short shakeout. Trust the taper.' },
+      { day: 'Sat', date: '2026-08-08', type: 'rest',    label: 'Rest',    km: 0 },
+      { day: 'Sun', date: '2026-08-09', type: 'rest',    label: 'Rest',    km: 0 },
+    ],
+  },
+  {
+    weekNum: 8, phase: 'Race', start: '2026-08-10',
+    days: [
+      { day: 'Mon', date: '2026-08-10', type: 'rest', label: 'Rest', km: 0 },
+      { day: 'Tue', date: '2026-08-11', type: 'easy', label: 'Easy', km: 2, description: 'Very easy 2km. Stay loose, stay calm.' },
+      { day: 'Wed', date: '2026-08-12', type: 'rest', label: 'Rest', km: 0 },
+      { day: 'Thu', date: '2026-08-13', type: 'easy', label: 'Easy', km: 2, description: '2km easy + 2 strides. Final activation — do not fatigue.' },
+      { day: 'Fri', date: '2026-08-14', type: 'rest', label: 'Rest', km: 0 },
+      { day: 'Sat', date: '2026-08-15', type: 'race', label: 'RACE', km: 10, description: 'Garmin Run Series 10km · Kings Park Stadium, Durban · 07:00 start.' },
+      { day: 'Sun', date: '2026-08-16', type: 'rest', label: 'Rest', km: 0 },
+    ],
+  },
+]
+
 // ── Chart config moved to useChartTheme() hook ───────────────────────────────
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -114,11 +265,16 @@ function WeeklyRunVolumeChart({ data }: { data: WeeklyRow[] }) {
   const { TIP, GRID, TICK } = useChartTheme()
   const chartData = [...data]
     .reverse()
-    .map(d => ({
-      label: format(parseISO(d.week_start), 'MMM d'),
-      km: n(d.run_km) ?? 0,
-      hr: n(d.run_count) && n(d.run_count)! > 0 ? n(d.avg_run_hr) : null,
-    }))
+    .map(d => {
+      const rc = n(d.run_count)
+      const h = n(d.avg_run_hr)
+      return {
+        label: format(parseISO(d.week_start), 'MMM d'),
+        km: n(d.run_km) ?? 0,
+        hr: rc && rc > 0 && h != null && h > 50 ? h : null,
+      }
+    })
+    .filter(d => d.km > 0)
 
   if (!chartData.length) {
     return (
@@ -155,6 +311,7 @@ function WeeklyRunVolumeChart({ data }: { data: WeeklyRow[] }) {
             yAxisId="hr"
             orientation="right"
             domain={[100, 180]}
+            allowDataOverflow
             tick={TICK}
             tickLine={false}
             axisLine={false}
@@ -174,6 +331,14 @@ function WeeklyRunVolumeChart({ data }: { data: WeeklyRow[] }) {
           <Legend
             wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
             formatter={(v: unknown) => <span style={{ color: '#9ca3af' }}>{String(v)}</span>}
+          />
+          <ReferenceLine
+            yAxisId="km"
+            y={20}
+            stroke="#10b981"
+            strokeDasharray="4 4"
+            strokeOpacity={0.7}
+            label={{ value: '20km', fill: '#10b981', fontSize: 9, position: 'insideTopRight' }}
           />
           <Bar yAxisId="km" dataKey="km" name="Distance" fill="#3b82f6" radius={[3, 3, 0, 0]} maxBarSize={44} />
           <Line yAxisId="hr" type="monotone" dataKey="hr" name="Avg HR" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: '#ef4444' }} connectNulls />
@@ -232,6 +397,13 @@ function BestEffortsChart({ data }: { data: RunRow[] }) {
             labelStyle={{ color: '#9ca3af' }}
             formatter={(v: unknown): [string, string] => [formatTime(Number(v)), 'Best 5k']}
           />
+          <ReferenceLine
+            y={1525}
+            stroke="#10b981"
+            strokeDasharray="4 4"
+            strokeOpacity={0.8}
+            label={{ value: 'PB 25:25', fill: '#10b981', fontSize: 9, position: 'insideTopRight' }}
+          />
           <Line
             type="monotone"
             dataKey="best5k"
@@ -279,7 +451,7 @@ function CadenceTrendChart({ data }: { data: RunRow[] }) {
           <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
           <XAxis dataKey="label" tick={TICK} tickLine={false} />
           <YAxis
-            domain={[60, 100]}
+            domain={[65, 95]}
             tick={TICK}
             tickLine={false}
             axisLine={false}
@@ -439,12 +611,241 @@ function RecentRunsTable({ data }: { data: RunRow[] }) {
   )
 }
 
+// ── Running Gear Card ─────────────────────────────────────────────────────────
+
+const SHOE_LIFESPAN_KM = 600
+
+function RunningGearCard({ data }: { data: GearRow[] }) {
+  if (!data.length) return null
+
+  return (
+    <Card>
+      <ChartHeader title="Running Gear" sub={`km tracked via Strava · ${SHOE_LIFESPAN_KM}km reference lifespan`} />
+      <div className="space-y-3">
+        {data.map(g => {
+          const km = Math.round((Number(g.total_distance_meters) || 0) / 1000)
+          const pct = Math.min(100, Math.round((km / SHOE_LIFESPAN_KM) * 100))
+          const barColor = pct > 83 ? 'bg-red-400' : pct > 50 ? 'bg-amber-400' : 'bg-blue-400'
+
+          return (
+            <div key={g.id}>
+              <div className="flex items-baseline justify-between mb-1">
+                <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate pr-3">
+                  {g.name}
+                  {g.retired && (
+                    <span className="ml-2 text-[9px] text-gray-600 uppercase tracking-wider">retired</span>
+                  )}
+                </p>
+                <div className="shrink-0 tabular-nums">
+                  <span className={`text-sm font-semibold ${barColor.replace('bg-', 'text-')}`}>{km}</span>
+                  <span className="text-[10px] text-gray-500 ml-0.5">km</span>
+                </div>
+              </div>
+              <div className="w-full h-1 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+// ── Training Plan Section ─────────────────────────────────────────────────────
+
+function TrainingPlanSection({ runs }: { runs: RunRow[] }) {
+  const [expanded, setExpanded] = useState(false)
+
+  const today = new Date()
+  const todayStr = format(today, 'yyyy-MM-dd')
+  const oneDayMs = 86400000
+  const daysToRace = Math.ceil((parseISO(RACE_DATE).getTime() - today.getTime()) / oneDayMs)
+  const daysElapsed = Math.max(0, Math.floor((today.getTime() - parseISO('2026-06-22').getTime()) / oneDayMs))
+  const progressPct = Math.min(100, Math.round((daysElapsed / PLAN_TOTAL_DAYS) * 100))
+
+  const actualByDate = new Map<string, RunRow>()
+  runs.forEach(r => { if (r.start_date >= '2026-06-22') actualByDate.set(r.start_date, r) })
+
+  const dueDays = TRAINING_PLAN.flatMap(w => w.days).filter(
+    d => d.type !== 'rest' && d.type !== 'race' && d.date <= todayStr
+  )
+  const completedCount = dueDays.filter(d => actualByDate.has(d.date)).length
+
+  // Volume compliance
+  const plannedToDate = dueDays.reduce((s, d) => s + d.km, 0)
+  const actualToDate = runs
+    .filter(r => r.start_date >= '2026-06-22' && r.start_date <= todayStr)
+    .reduce((s, r) => s + (n(r.distance_km) ?? 0), 0)
+  const kmBalance = actualToDate - plannedToDate
+  const balanceLabel = kmBalance >= 0 ? `+${kmBalance.toFixed(1)} km` : `${kmBalance.toFixed(1)} km`
+  const balanceColor = kmBalance >= -2 ? 'text-green-400' : kmBalance >= -5 ? 'text-amber-400' : 'text-red-400'
+  const balanceStatus = kmBalance >= -2 ? 'On track' : kmBalance >= -5 ? 'Behind' : 'Well behind'
+
+  return (
+    <div className="space-y-2">
+      <Card>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-1">Goal Race</p>
+            <p className="text-base font-semibold text-green-400 truncate">{RACE_NAME}</p>
+            <p className="text-xs text-gray-500 mt-0.5">15 Aug 2026 · 07:00 · Kings Park Stadium, Durban</p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-3xl font-bold text-green-400 tabular-nums leading-none">{Math.max(0, daysToRace)}</p>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-1">days to go</p>
+          </div>
+        </div>
+        <div className="mt-3 space-y-1.5">
+          <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div className="h-full bg-green-400 rounded-full" style={{ width: `${progressPct}%` }} />
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-500">
+            <span>{completedCount} of {dueDays.length} workouts completed</span>
+            <span>{progressPct}% through plan</span>
+          </div>
+        </div>
+
+        {/* Volume balance */}
+        {plannedToDate > 0 && (
+          <div className="mt-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-800 pt-3">
+            <div className="flex items-center gap-3 text-[11px]">
+              <span className="text-gray-500">Planned <span className="text-gray-300 font-medium">{plannedToDate.toFixed(0)} km</span></span>
+              <span className="text-gray-600">·</span>
+              <span className="text-gray-500">Ran <span className="text-gray-300 font-medium">{actualToDate.toFixed(1)} km</span></span>
+            </div>
+            <div className="text-right">
+              <span className={`text-xs font-semibold tabular-nums ${balanceColor}`}>{balanceLabel}</span>
+              <span className={`ml-1.5 text-[10px] ${balanceColor}`}>{balanceStatus}</span>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="mt-3 text-[10px] text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1"
+        >
+          {expanded ? '▲ collapse plan' : '▼ show training plan'}
+        </button>
+      </Card>
+
+      {expanded && (
+        <>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-0.5">
+            {(['easy', 'long', 'tempo', 'intervals', 'strides', 'race'] as WorkoutType[]).map(t => (
+              <div key={t} className="flex items-center gap-1.5">
+                <div className={`w-2 h-2 rounded-full ${WORKOUT_STYLES[t].dot}`} />
+                <span className="text-[10px] text-gray-500 capitalize">{t}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-1.5">
+            {TRAINING_PLAN.map(week => {
+              const weekEnd = week.days[week.days.length - 1].date
+              const isCurrentWeek = week.start <= todayStr && todayStr <= weekEnd
+              const isPastWeek = weekEnd < todayStr
+              const isActiveWeek = isPastWeek || isCurrentWeek
+
+              const weekPlannedKm = week.days.reduce((s, d) => s + d.km, 0)
+              const weekPlannedDue = week.days
+                .filter(d => d.type !== 'rest' && d.date <= todayStr)
+                .reduce((s, d) => s + d.km, 0)
+              const weekActualKm = runs
+                .filter(r => r.start_date >= week.start && r.start_date <= weekEnd && r.start_date <= todayStr)
+                .reduce((s, r) => s + (n(r.distance_km) ?? 0), 0)
+              const weekBalance = weekActualKm - weekPlannedDue
+              const weekBalanceColor = weekBalance >= -1 ? 'text-green-400' : weekBalance >= -3 ? 'text-amber-400' : 'text-red-400'
+
+              return (
+                <Card key={week.weekNum} className={isCurrentWeek ? 'ring-1 ring-blue-500/40' : ''}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-400">W{week.weekNum}</span>
+                      <span className={`text-[10px] font-semibold uppercase tracking-wider ${PHASE_STYLE[week.phase]}`}>
+                        {week.phase}
+                      </span>
+                      <span className="text-[10px] text-gray-500 hidden sm:block">
+                        {format(parseISO(week.start), 'MMM d')}–{format(parseISO(weekEnd), 'MMM d')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isActiveWeek && weekPlannedDue > 0 ? (
+                        <>
+                          <span className="text-[10px] text-gray-500 tabular-nums">
+                            {weekActualKm.toFixed(1)}<span className="text-gray-600">/{weekPlannedKm}km</span>
+                          </span>
+                          <span className={`text-[10px] font-semibold tabular-nums ${weekBalanceColor}`}>
+                            {weekBalance >= 0 ? `+${weekBalance.toFixed(1)}` : weekBalance.toFixed(1)}
+                          </span>
+                        </>
+                      ) : (
+                        weekPlannedKm > 0 && <span className="text-[10px] text-gray-500">{weekPlannedKm} km</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1">
+                    {week.days.map(d => {
+                      const isToday = d.date === todayStr
+                      const isPast = d.date < todayStr
+                      const actual = actualByDate.get(d.date)
+                      const isCompleted = actual != null && d.type !== 'rest'
+                      const s = WORKOUT_STYLES[d.type]
+
+                      return (
+                        <div
+                          key={d.date}
+                          title={d.description ?? (d.type !== 'rest' ? `${d.label} · ${d.km}km` : 'Rest')}
+                          className={[
+                            'flex flex-col items-center justify-start gap-0.5 rounded-md py-1.5 px-0.5 border text-center cursor-default',
+                            d.type === 'rest' ? 'border-transparent' : s.badge,
+                            isToday ? 'ring-1 ring-gray-400/50 dark:ring-white/20 bg-gray-100 dark:bg-white/5' : '',
+                            isPast && d.type !== 'rest' && !isCompleted ? 'opacity-40' : '',
+                          ].filter(Boolean).join(' ')}
+                        >
+                          <span className={`text-[9px] font-medium leading-none mb-0.5 ${isToday ? 'text-gray-900 dark:text-white' : 'text-gray-500'}`}>
+                            {d.day}
+                          </span>
+                          {d.type !== 'rest' ? (
+                            <>
+                              {isCompleted
+                                ? <span className="text-green-400 text-[11px] leading-none">✓</span>
+                                : <div className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                              }
+                              <span className={`text-[9px] font-medium leading-none mt-0.5 ${isCompleted ? 'text-green-400' : s.text}`}>
+                                {isCompleted
+                                  ? `${(n(actual?.distance_km) ?? d.km).toFixed(1)}`
+                                  : `${d.km}`}km
+                              </span>
+                              <span className={`text-[8px] leading-none mt-0.5 hidden sm:block ${isCompleted ? 'text-green-400/70' : 'text-gray-500'}`}>
+                                {isCompleted ? 'done' : d.label}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-[10px] text-gray-700">·</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function RunningPage() {
   const { user } = useAuth()
   const [runs, setRuns] = useState<RunRow[]>([])
   const [weeks, setWeeks] = useState<WeeklyRow[]>([])
+  const [gear, setGear] = useState<GearRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -463,9 +864,15 @@ export default function RunningPage() {
         .eq('user_id', uid)
         .order('week_start', { ascending: false })
         .limit(52),
-    ]).then(([r, w]) => {
+      supabase
+        .from('strava_gear')
+        .select('id,gear_type,name,brand,model_name,retired,total_distance_meters')
+        .eq('user_id', uid)
+        .order('total_distance_meters', { ascending: false }),
+    ]).then(([r, w, g]) => {
       setRuns(r.data ?? [])
       setWeeks(w.data ?? [])
+      setGear(g.data ?? [])
       setLoading(false)
     })
   }, [user])
@@ -501,9 +908,12 @@ export default function RunningPage() {
       <div>
         <h1 className="text-base font-semibold text-gray-900 dark:text-white mb-0.5">Running</h1>
         <p className="text-xs text-gray-500">
-          Weekly volume · pace progression · cadence · lap breakdown
+          Training plan · weekly volume · pace progression · cadence · lap breakdown
         </p>
       </div>
+
+      {/* Training plan */}
+      <TrainingPlanSection runs={runs} />
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -547,6 +957,9 @@ export default function RunningPage() {
 
       {/* Recent runs table */}
       {runs.length > 0 && <RecentRunsTable data={runs} />}
+
+      {/* Gear */}
+      {gear.length > 0 && <RunningGearCard data={gear} />}
     </div>
   )
 }
