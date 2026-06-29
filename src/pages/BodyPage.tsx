@@ -11,6 +11,13 @@ import { useChartTheme } from '../lib/chartTheme'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type FitnessAgeRow = {
+  date: string
+  fitness_age: number | null
+  chronological_age: number | null
+  achievable_fitness_age: number | null
+}
+
 type BodyRow = {
   date: string
   weight_kg: string | null
@@ -290,24 +297,97 @@ function StatsPanel({ latest }: { latest: BodyRow | null }) {
   )
 }
 
+// ── Fitness Age ───────────────────────────────────────────────────────────────
+
+function FitnessAgeSection({ data }: { data: FitnessAgeRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
+  if (!data.length) return null
+
+  const latest = data[data.length - 1]
+  const diff = latest.fitness_age != null && latest.chronological_age != null
+    ? latest.chronological_age - latest.fitness_age
+    : null
+
+  return (
+    <Card>
+      <ChartHeader
+        title="Fitness Age"
+        sub="Garmin fitness age vs chronological age · lower is better"
+      />
+      {/* Stats strip */}
+      <div className="grid grid-cols-3 gap-4 mb-4">
+        <div>
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Fitness Age</p>
+          <p className="text-2xl font-semibold text-blue-400">{latest.fitness_age ?? '--'}<span className="text-xs font-normal text-gray-500 ml-1">yrs</span></p>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Chronological</p>
+          <p className="text-2xl font-semibold text-gray-400">{latest.chronological_age ?? '--'}<span className="text-xs font-normal text-gray-500 ml-1">yrs</span></p>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Advantage</p>
+          <p className={`text-2xl font-semibold ${diff != null && diff > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {diff != null ? `${diff > 0 ? '+' : ''}${diff} yrs` : '--'}
+          </p>
+        </div>
+      </div>
+      {/* Achievable target */}
+      {latest.achievable_fitness_age != null && (
+        <p className="text-[11px] text-gray-500 mb-3">
+          Achievable fitness age: <span className="text-emerald-400 font-medium">{latest.achievable_fitness_age} yrs</span>
+        </p>
+      )}
+      {/* Chart — only renders with 2+ data points */}
+      {data.length >= 2 && (
+        <ResponsiveContainer width="99%" height={160}>
+          <LineChart
+            data={data.map(r => ({ date: fmt(r.date), fitness: r.fitness_age, chrono: r.chronological_age, achievable: r.achievable_fitness_age }))}
+            margin={{ top: 4, right: 12, bottom: 4, left: 0 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+            <XAxis dataKey="date" tick={TICK} tickLine={false} interval="preserveStartEnd" />
+            <YAxis domain={['auto', 'auto']} tick={TICK} tickLine={false} axisLine={false} width={28} />
+            <Tooltip contentStyle={TIP} labelStyle={{ color: '#9ca3af' }}
+              formatter={(v, name): [string, string] => [`${v} yrs`, String(name)]} />
+            <Line dataKey="fitness" name="Fitness Age" stroke="#3b82f6" strokeWidth={2} dot={false} connectNulls />
+            <Line dataKey="chrono" name="Chronological" stroke="#6b7280" strokeWidth={1} strokeDasharray="4 4" dot={false} connectNulls />
+            <Line dataKey="achievable" name="Achievable" stroke="#10b981" strokeWidth={1} strokeDasharray="4 4" dot={false} connectNulls />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+      {data.length < 2 && (
+        <p className="text-[11px] text-gray-600">Chart will populate as Garmin syncs fitness age data over time.</p>
+      )}
+    </Card>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function BodyPage() {
   const { user } = useAuth()
   const [data, setData] = useState<BodyRow[]>([])
+  const [fitnessAge, setFitnessAge] = useState<FitnessAgeRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!user) return
-    supabase
-      .from('zepp_body_composition')
-      .select('date,weight_kg,bmi,body_fat_percent,muscle_mass_kg,bone_mass_kg,hydration_percent,visceral_fat,visceral_fat_rating,metabolic_age,physique_rating,basal_metabolic_rate')
-      .eq('user_id', user.id)
-      .order('date', { ascending: true })
-      .then(({ data: rows }) => {
-        setData(rows ?? [])
-        setLoading(false)
-      })
+    Promise.all([
+      supabase
+        .from('zepp_body_composition')
+        .select('date,weight_kg,bmi,body_fat_percent,muscle_mass_kg,bone_mass_kg,hydration_percent,visceral_fat,visceral_fat_rating,metabolic_age,physique_rating,basal_metabolic_rate')
+        .eq('user_id', user.id)
+        .order('date', { ascending: true }),
+      supabase
+        .from('garmin_fitness_age')
+        .select('date,fitness_age,chronological_age,achievable_fitness_age')
+        .eq('user_id', user.id)
+        .order('date', { ascending: true }),
+    ]).then(([body, fa]) => {
+      setData(body.data ?? [])
+      setFitnessAge(fa.data ?? [])
+      setLoading(false)
+    })
   }, [user])
 
   if (loading) {
@@ -396,6 +476,9 @@ export default function BodyPage() {
 
       {/* Visceral fat */}
       <VisceralFatChart data={data} />
+
+      {/* Fitness age */}
+      <FitnessAgeSection data={fitnessAge} />
     </div>
   )
 }
