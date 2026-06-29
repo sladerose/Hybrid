@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
 import { format, parseISO } from 'date-fns'
 import {
-  ComposedChart, AreaChart, ScatterChart,
+  ComposedChart, AreaChart, ScatterChart, BarChart,
   Line, Bar, Area, Scatter,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell,
   ResponsiveContainer, ReferenceLine, ZAxis,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
@@ -48,6 +48,20 @@ type CorrRow = {
 type StressRow = {
   week_start: string
   stress_value: number | null
+}
+
+type RunLoadRow = {
+  run_date: string
+  name: string | null
+  distance_km: string | null
+  relative_effort: number | null
+  sleep_night_before: string | null
+  bb_peak_day_of_run: number | null
+  next_day_bb_peak: number | null
+  next_day_rhr: number | null
+  rhr_day_of_run: number | null
+  bb_impact: number | null
+  rhr_impact: number | null
 }
 
 // ── Chart config moved to useChartTheme() hook ───────────────────────────────
@@ -401,6 +415,106 @@ function WeeklyStressChart({ data }: { data: StressRow[] }) {
   )
 }
 
+// ── Run Recovery Cost ─────────────────────────────────────────────────────────
+
+function RunRecoveryCostPanel({ data }: { data: RunLoadRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
+
+  if (!data.length) return null
+
+  const chartData = [...data]
+    .sort((a, b) => a.run_date.localeCompare(b.run_date))
+    .map(d => ({
+      label: format(parseISO(d.run_date), 'MMM d'),
+      impact: d.bb_impact,
+      name: d.name ?? 'Run',
+      km: Number(d.distance_km ?? 0).toFixed(1),
+    }))
+
+  return (
+    <Card>
+      <ChartHeader
+        title="Run Recovery Cost"
+        sub="Body battery impact the day after each run — green = recovered, red = depleted"
+      />
+
+      {/* Bar chart */}
+      <ResponsiveContainer width="99%" height={180}>
+        <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+          <XAxis dataKey="label" tick={TICK} tickLine={false} />
+          <YAxis tick={TICK} tickLine={false} axisLine={false} width={32} />
+          <ReferenceLine y={0} stroke="#6b7280" strokeOpacity={0.5} />
+          <Tooltip
+            contentStyle={TIP}
+            labelStyle={{ color: '#9ca3af' }}
+            formatter={(v, name): [string, string] => {
+              const n = Number(Array.isArray(v) ? v[0] : (v ?? 0))
+              return [`${n > 0 ? '+' : ''}${n} BB pts`, String(name)]
+            }}
+          />
+          <Bar dataKey="impact" name="BB impact" radius={[2, 2, 0, 0]}>
+            {chartData.map((entry, i) => (
+              <Cell key={i} fill={(entry.impact ?? 0) >= 0 ? '#10b981' : '#ef4444'} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+
+      {/* Table */}
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="text-[10px] text-gray-500 uppercase tracking-wider border-b border-gray-200 dark:border-gray-800">
+              <th className="text-left pb-2 pr-3 font-medium">Run</th>
+              <th className="text-right pb-2 px-2 font-medium">Date</th>
+              <th className="text-right pb-2 px-2 font-medium">km</th>
+              <th className="text-right pb-2 px-2 font-medium">Effort</th>
+              <th className="text-right pb-2 px-2 font-medium">Sleep before</th>
+              <th className="text-right pb-2 pl-2 font-medium">BB impact</th>
+              <th className="text-right pb-2 pl-2 font-medium">RHR impact</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...data]
+              .sort((a, b) => b.run_date.localeCompare(a.run_date))
+              .slice(0, 12)
+              .map((d, i) => {
+                const bbImp = d.bb_impact ?? 0
+                const rhrImp = d.rhr_impact ?? 0
+                return (
+                  <tr key={i} className="border-b border-gray-100 dark:border-gray-800/50 last:border-0">
+                    <td className="py-2 pr-3 text-gray-700 dark:text-gray-300 truncate max-w-[120px]">
+                      {d.name ?? 'Run'}
+                    </td>
+                    <td className="py-2 px-2 text-right text-gray-500">
+                      {format(parseISO(d.run_date), 'd MMM')}
+                    </td>
+                    <td className="py-2 px-2 text-right text-gray-500">
+                      {Number(d.distance_km ?? 0).toFixed(1)}
+                    </td>
+                    <td className="py-2 px-2 text-right text-gray-500">
+                      {d.relative_effort ?? '--'}
+                    </td>
+                    <td className="py-2 px-2 text-right text-gray-500">
+                      {d.sleep_night_before ? `${Number(d.sleep_night_before).toFixed(1)}h` : '--'}
+                    </td>
+                    <td className={`py-2 pl-2 text-right font-medium tabular-nums ${bbImp >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {bbImp > 0 ? '+' : ''}{bbImp}
+                    </td>
+                    <td className={`py-2 pl-2 text-right font-medium tabular-nums ${rhrImp <= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {rhrImp > 0 ? '+' : ''}{rhrImp}
+                    </td>
+                  </tr>
+                )
+              })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function RecoveryPage() {
@@ -409,6 +523,7 @@ export default function RecoveryPage() {
   const [sleep, setSleep] = useState<SleepRow[]>([])
   const [corr, setCorr] = useState<CorrRow[]>([])
   const [stress, setStress] = useState<StressRow[]>([])
+  const [runLoad, setRunLoad] = useState<RunLoadRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -438,11 +553,18 @@ export default function RecoveryPage() {
         .select('week_start,stress_value')
         .eq('user_id', uid)
         .order('week_start', { ascending: true }),
-    ]).then(([t, s, c, w]) => {
+      supabase
+        .from('v_run_load_recovery')
+        .select('run_date,name,distance_km,relative_effort,sleep_night_before,bb_peak_day_of_run,next_day_bb_peak,next_day_rhr,rhr_day_of_run,bb_impact,rhr_impact')
+        .eq('user_id', uid)
+        .order('run_date', { ascending: false })
+        .limit(20),
+    ]).then(([t, s, c, w, rl]) => {
       setTrend(t.data ?? [])
       setSleep(s.data ?? [])
       setCorr(c.data ?? [])
       setStress(w.data ?? [])
+      setRunLoad(rl.data ?? [])
       setLoading(false)
     })
   }, [user])
@@ -525,6 +647,9 @@ export default function RecoveryPage() {
           <StressRHRChart data={trend} />
         </Card>
       </div>
+
+      {/* Run recovery cost */}
+      <RunRecoveryCostPanel data={runLoad} />
 
       {/* Sleep stages + summary */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
