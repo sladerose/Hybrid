@@ -27,6 +27,8 @@ type ReadinessRow = {
   sleep_rem_percent: string | null
   bb_score: number | null
   stress_score: number | null
+  heart_score: number | null
+  activity_score: number | null
   sleep_score: string | null
   readiness_score: string | null
   readiness_signal: 'green' | 'amber' | 'red' | null
@@ -207,18 +209,12 @@ function ReadinessRadar({
   const fillColor = RADAR_SIGNAL[sig] ?? '#f59e0b'
   const sigLabel  = sig === 'green' ? 'Ready' : sig === 'red' ? 'Rest day' : 'Take it easy'
 
-  const rhr       = readiness?.resting_hr ?? 55
-  const heartScore = Math.max(0, Math.min(100, ((65 - rhr) / 20) * 100))
-
-  const vigMin       = n(week?.total_vigorous_min) ?? 0
-  const activityScore = Math.min(100, (vigMin / 75) * 100)
-
   const axes = [
     { axis: 'Sleep',    score: Math.round(n(readiness?.sleep_score)    ?? 0) },
-    { axis: 'Recovery', score: Math.round(readiness?.bb_score          ?? 0) },
-    { axis: 'Heart',    score: Math.round(heartScore) },
-    { axis: 'Stress',   score: Math.round(readiness?.stress_score      ?? 0) },
-    { axis: 'Activity', score: Math.round(activityScore) },
+    { axis: 'Recovery', score: Math.round(n(readiness?.bb_score)       ?? 0) },
+    { axis: 'Heart',    score: Math.round(n(readiness?.heart_score)    ?? 0) },
+    { axis: 'Stress',   score: Math.round(n(readiness?.stress_score)   ?? 0) },
+    { axis: 'Activity', score: Math.round(n(readiness?.activity_score) ?? 0) },
   ]
 
   const overallScore = Math.round(n(readiness?.readiness_score) ?? 0)
