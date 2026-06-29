@@ -937,7 +937,7 @@ function HRZoneChart({ runs, zones }: { runs: RunRow[]; zones: ZoneRow }) {
               </Pie>
               <Tooltip
                 contentStyle={TIP}
-                formatter={(v: number, name: string): [string, string] => [`${v} run${v !== 1 ? 's' : ''}`, name]}
+                formatter={(v: number | string | undefined, name: string): [string, string] => { const n = Number(v ?? 0); return [`${n} run${n !== 1 ? 's' : ''}`, name]; }}
               />
             </PieChart>
           </ResponsiveContainer>
