@@ -286,6 +286,54 @@ function ReadinessRadar({
   )
 }
 
+// ── Week vs Last Week ─────────────────────────────────────────────────────────
+
+function WeekComparison({ week }: { week: WeekRow | null }) {
+  if (!week) return null
+
+  const metrics: {
+    label: string
+    value: string | number | null
+    unit: string
+    deltaVal: string | null
+    higherIsBetter: boolean
+    accent: string
+  }[] = [
+    { label: 'Avg RHR',    value: fmt(week.avg_rhr, 0),   unit: 'bpm', deltaVal: week.rhr_delta,    higherIsBetter: false, accent: 'text-red-400' },
+    { label: 'Avg Stress', value: fmt(week.avg_stress, 0), unit: '',    deltaVal: week.stress_delta,  higherIsBetter: false, accent: 'text-amber-400' },
+    { label: 'BB High',    value: fmt(week.avg_bb_high, 0),unit: '',    deltaVal: week.bb_delta,      higherIsBetter: true,  accent: 'text-emerald-400' },
+    { label: 'Avg Sleep',  value: fmt(week.avg_sleep, 1),  unit: 'h',   deltaVal: week.sleep_delta,   higherIsBetter: true,  accent: 'text-purple-400' },
+    { label: 'Run km',     value: fmt(week.run_km, 1),     unit: 'km',  deltaVal: week.run_km_delta,  higherIsBetter: true,  accent: 'text-blue-400' },
+  ]
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">This week vs last week</p>
+      </div>
+      <div className="grid grid-cols-5 gap-2">
+        {metrics.map((m) => {
+          const d = delta(m.deltaVal, m.higherIsBetter)
+          return (
+            <div key={m.label} className="text-center">
+              <p className="text-[10px] text-gray-500 mb-1 truncate">{m.label}</p>
+              <p className={`text-lg font-semibold tabular-nums ${m.accent}`}>
+                {m.value}
+                {m.unit && <span className="text-[10px] font-normal text-gray-500 ml-0.5">{m.unit}</span>}
+              </p>
+              {d ? (
+                <p className={`text-[11px] font-medium mt-0.5 ${d.color}`}>{d.text}</p>
+              ) : (
+                <p className="text-[11px] text-gray-600 mt-0.5">--</p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 
 type HeatmapMode = 'steps' | 'calories' | 'vigorous' | 'count'
@@ -637,6 +685,9 @@ export default function DashboardPage() {
           />
         </div>
       </div>
+
+      {/* Week vs last week */}
+      <WeekComparison week={week} />
 
       {/* Activity heatmap */}
       <Card>
