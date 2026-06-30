@@ -64,6 +64,13 @@ type RunLoadRow = {
   rhr_impact: number | null
 }
 
+type RespRow = {
+  date: string
+  avg_waking_respiration: string | number | null
+  highest_respiration: string | number | null
+  lowest_respiration: string | number | null
+}
+
 // ── Chart config moved to useChartTheme() hook ───────────────────────────────
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -415,6 +422,72 @@ function WeeklyStressChart({ data }: { data: StressRow[] }) {
   )
 }
 
+// ── Respiration trend chart ───────────────────────────────────────────────────
+
+function RespirationChart({ data }: { data: RespRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
+
+  const sorted = [...data].sort((a, b) => a.date.localeCompare(b.date))
+  const chartData = sorted.map((d, i) => {
+    const avg = n(d.avg_waking_respiration)
+    const slice = sorted
+      .slice(Math.max(0, i - 6), i + 1)
+      .map(r => n(r.avg_waking_respiration))
+      .filter((v): v is number => v !== null)
+    const roll7 = slice.length ? +(slice.reduce((a, b) => a + b, 0) / slice.length).toFixed(2) : null
+    return {
+      label: format(parseISO(d.date), 'MMM d'),
+      resp: avg,
+      resp7: roll7,
+      high: n(d.highest_respiration),
+      low: n(d.lowest_respiration),
+    }
+  })
+
+  const interval = Math.max(1, Math.floor(chartData.length / 10))
+  const vals = chartData.map(d => d.resp).filter((v): v is number => v !== null)
+  const minVal = vals.length ? Math.floor(Math.min(...vals)) - 1 : 10
+  const maxVal = vals.length ? Math.ceil(Math.max(...vals)) + 1 : 25
+
+  return (
+    <ResponsiveContainer width="99%" height={220}>
+      <ComposedChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+        <defs>
+          <linearGradient id="respGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.15} />
+            <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+        <XAxis dataKey="label" tick={TICK} tickLine={false} interval={interval} />
+        <YAxis domain={[minVal, maxVal]} tick={TICK} tickLine={false} axisLine={false} width={28}
+          tickFormatter={(v: number) => `${v}`} />
+        <Tooltip
+          contentStyle={TIP}
+          labelStyle={{ color: '#9ca3af' }}
+          formatter={(v: unknown, name: unknown): [string, string] => {
+            const s = String(name)
+            const num = Number(v)
+            return [`${num.toFixed(1)} br/min`, s]
+          }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+          formatter={(v: unknown) => <span style={{ color: '#9ca3af' }}>{String(v)}</span>}
+        />
+        <ReferenceLine y={16} stroke="#6b7280" strokeDasharray="4 4" strokeOpacity={0.4}
+          label={{ value: '16', fill: '#6b7280', fontSize: 9, position: 'insideTopRight' }} />
+        <Area type="monotone" dataKey="resp" name="Avg waking resp"
+          stroke="#06b6d4" strokeWidth={2} fill="url(#respGrad)" dot={false} connectNulls legendType="none" />
+        <Line type="monotone" dataKey="resp" name="Avg waking resp"
+          stroke="#06b6d4" strokeWidth={2} dot={false} connectNulls legendType="line" />
+        <Line type="monotone" dataKey="resp7" name="7d avg"
+          stroke="#06b6d4" strokeWidth={1} strokeDasharray="5 4" strokeOpacity={0.5} dot={false} connectNulls legendType="none" />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+
 // ── Run Recovery Cost ─────────────────────────────────────────────────────────
 
 function RunRecoveryCostPanel({ data }: { data: RunLoadRow[] }) {
@@ -524,6 +597,7 @@ export default function RecoveryPage() {
   const [corr, setCorr] = useState<CorrRow[]>([])
   const [stress, setStress] = useState<StressRow[]>([])
   const [runLoad, setRunLoad] = useState<RunLoadRow[]>([])
+  const [respiration, setRespiration] = useState<RespRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -559,12 +633,20 @@ export default function RecoveryPage() {
         .eq('user_id', uid)
         .order('run_date', { ascending: false })
         .limit(20),
-    ]).then(([t, s, c, w, rl]) => {
+      supabase
+        .from('garmin_daily')
+        .select('date,avg_waking_respiration,highest_respiration,lowest_respiration')
+        .eq('user_id', uid)
+        .not('avg_waking_respiration', 'is', null)
+        .order('date', { ascending: false })
+        .limit(90),
+    ]).then(([t, s, c, w, rl, resp]) => {
       setTrend(t.data ?? [])
       setSleep(s.data ?? [])
       setCorr(c.data ?? [])
       setStress(w.data ?? [])
       setRunLoad(rl.data ?? [])
+      setRespiration(resp.data ?? [])
       setLoading(false)
     })
   }, [user])
@@ -647,6 +729,17 @@ export default function RecoveryPage() {
           <StressRHRChart data={trend} />
         </Card>
       </div>
+
+      {/* Respiration trend */}
+      {respiration.length > 0 && (
+        <Card>
+          <ChartHeader
+            title="Waking Respiration"
+            sub="Avg breaths per minute on waking · 90 days · faded = 7d avg · spike signals illness or overload"
+          />
+          <RespirationChart data={respiration} />
+        </Card>
+      )}
 
       {/* Run recovery cost */}
       <RunRecoveryCostPanel data={runLoad} />

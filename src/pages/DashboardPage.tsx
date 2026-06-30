@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { format, parseISO } from 'date-fns'
+import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
 } from 'recharts'
@@ -509,6 +509,85 @@ function ActivityHeatmap({ data, today }: { data: HeatmapRow[]; today: string })
   )
 }
 
+// ── Weekly Coach ──────────────────────────────────────────────────────────────
+
+function WeeklyCoach({
+  insights,
+  loading,
+  error,
+  generatedAt,
+  onAnalyse,
+}: {
+  insights: string[] | null
+  loading: boolean
+  error: string | null
+  generatedAt: string | null
+  onAnalyse: () => void
+}) {
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">Weekly Coach</p>
+          <span className="text-[9px] font-semibold bg-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
+            AI
+          </span>
+        </div>
+        {insights && !loading && (
+          <button
+            onClick={onAnalyse}
+            className="text-[11px] text-gray-500 hover:text-gray-300 dark:hover:text-gray-400 transition-colors cursor-pointer"
+          >
+            Refresh
+          </button>
+        )}
+      </div>
+
+      {loading && (
+        <div className="flex items-center gap-2.5 py-3">
+          <div className="w-4 h-4 rounded-full border-2 border-violet-400 border-t-transparent animate-spin flex-shrink-0" />
+          <p className="text-sm text-gray-500">Analysing 14 days of data...</p>
+        </div>
+      )}
+
+      {!loading && error && (
+        <p className="text-sm text-red-400 py-2">{error}</p>
+      )}
+
+      {!loading && !insights && !error && (
+        <div className="py-1">
+          <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+            Get 3–4 personalised insights based on your last 14 days of recovery, runs, and training load.
+          </p>
+          <button
+            onClick={onAnalyse}
+            className="px-4 py-2 bg-violet-500 hover:bg-violet-400 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+          >
+            Analyse my week
+          </button>
+        </div>
+      )}
+
+      {!loading && insights && insights.length > 0 && (
+        <ul className="space-y-2.5">
+          {insights.map((insight, i) => (
+            <li key={i} className="flex gap-2 text-sm text-gray-700 dark:text-gray-300 leading-snug">
+              <span className="text-violet-400 flex-shrink-0 mt-0.5">•</span>
+              <span>{insight}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {generatedAt && !loading && (
+        <p className="text-[10px] text-gray-500 mt-3">
+          Analysed {formatDistanceToNow(new Date(generatedAt), { addSuffix: true })}
+        </p>
+      )}
+    </Card>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -518,6 +597,29 @@ export default function DashboardPage() {
   const [heatmap, setHeatmap] = useState<HeatmapRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [coachInsights, setCoachInsights] = useState<string[] | null>(null)
+  const [coachLoading, setCoachLoading] = useState(false)
+  const [coachError, setCoachError] = useState<string | null>(null)
+  const [coachGeneratedAt, setCoachGeneratedAt] = useState<string | null>(null)
+
+  async function analyseWeek() {
+    setCoachLoading(true)
+    setCoachError(null)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('coach-insights')
+      if (fnError) throw fnError
+      if (data?.insights?.length > 0) {
+        setCoachInsights(data.insights)
+        setCoachGeneratedAt(data.generated_at)
+      } else {
+        setCoachError('No insights returned. Try again.')
+      }
+    } catch (err) {
+      setCoachError(err instanceof Error ? err.message : 'Failed to analyse. Try again.')
+    } finally {
+      setCoachLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!user) return
@@ -688,6 +790,15 @@ export default function DashboardPage() {
 
       {/* Week vs last week */}
       <WeekComparison week={week} />
+
+      {/* Weekly AI Coach */}
+      <WeeklyCoach
+        insights={coachInsights}
+        loading={coachLoading}
+        error={coachError}
+        generatedAt={coachGeneratedAt}
+        onAnalyse={analyseWeek}
+      />
 
       {/* Activity heatmap */}
       <Card>
