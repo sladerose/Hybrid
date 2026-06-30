@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Sync yesterday's Garmin data to Supabase.
 
-Auth: uses pre-generated tokens at ~/.garminconnect (no email/password needed).
-Encode tokens for GitHub Actions: tar -czf - ~/.garminconnect | base64 -w 0
-Store output as GARMIN_TOKENS_BASE64 secret. The workflow decodes before running this script.
+Auth: reads GARMIN_REFRESH_TOKEN env var, writes a minimal garmin_tokens.json,
+then lets garminconnect auto-refresh the access token on login. After login,
+rotates the new refresh token back to GitHub Secrets via GH_TOKEN + GH_PAT.
 """
 
 import os
+import subprocess
 import sys
 import datetime
 import json
@@ -18,11 +19,53 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 USER_ID = os.environ["SUPABASE_USER_ID"]
 TOKEN_PATH = os.path.expanduser("~/.garminconnect")
+GARMIN_CLIENT_ID = "GARMIN_CONNECT_MOBILE_ANDROID_DI_2025Q2"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
+
+def _write_tokens_from_env() -> None:
+    refresh_token = os.environ.get("GARMIN_REFRESH_TOKEN")
+    if not refresh_token:
+        return
+    os.makedirs(TOKEN_PATH, exist_ok=True)
+    tokens = {
+        "di_token": "placeholder",
+        "di_refresh_token": refresh_token,
+        "di_client_id": GARMIN_CLIENT_ID,
+    }
+    with open(os.path.join(TOKEN_PATH, "garmin_tokens.json"), "w") as f:
+        json.dump(tokens, f)
+
+
+def _rotate_refresh_token() -> None:
+    token_file = os.path.join(TOKEN_PATH, "garmin_tokens.json")
+    try:
+        with open(token_file) as f:
+            new_tokens = json.load(f)
+        new_refresh = new_tokens.get("di_refresh_token")
+        repo = os.environ.get("GITHUB_REPOSITORY")
+        if not (new_refresh and repo):
+            return
+        result = subprocess.run(
+            ["gh", "secret", "set", "GARMIN_REFRESH_TOKEN",
+             "--repo", repo, "--body", new_refresh],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            print("  Garmin refresh token rotated in GitHub Secrets")
+        else:
+            print(f"  WARNING: refresh token rotation failed: {result.stderr.strip()}", file=sys.stderr)
+    except Exception as e:
+        print(f"  WARNING: refresh token rotation error: {e}", file=sys.stderr)
+
+
+_write_tokens_from_env()
+
 client = Garmin()
 client.login(TOKEN_PATH)
+
+_rotate_refresh_token()
 
 yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
 errors = []
