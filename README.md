@@ -7,10 +7,26 @@ Personal fitness analytics dashboard built for a single athlete. Unifies data fr
 | Layer | Choice |
 |---|---|
 | Frontend | Vite + React, TypeScript, Tailwind CSS, Recharts |
+| 3D | Three.js / React Three Fiber + drei (muscle-group body model) |
 | Database | Supabase (PostgreSQL) |
-| Auth | Supabase Auth |
+| Auth | Supabase Auth (email/password, `AuthContext` + `ProtectedRoute`) |
+| PWA | `vite-plugin-pwa` — installable, offline-capable, auto-update |
 | Deployment | Vercel |
 | Data sync | GitHub Actions (4x daily) |
+
+## Local Development
+
+```
+npm install
+npm run dev
+```
+
+Requires `.env.local`:
+
+```
+VITE_SUPABASE_URL=https://oiiznhwhjcowapxkxpyz.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key from Supabase dashboard>
+```
 
 ## Pages
 
@@ -18,7 +34,8 @@ Personal fitness analytics dashboard built for a single athlete. Unifies data fr
 - `/recovery` — RHR trend, sleep stages, stress, body battery, blood pressure, scatter correlations
 - `/running` — Weekly volume, pace, lap breakdown, cadence trend, best efforts
 - `/strength` — Session volume, exercise progression, muscle group balance
-- `/body` — Weight, body fat %, muscle mass, visceral fat, metabolic age
+- `/body` — Weight, body fat %, muscle mass, visceral fat, metabolic age, 3D muscle-group model
+- `/login` — Supabase Auth sign-in (protects all other routes)
 
 ## Data Sources
 
