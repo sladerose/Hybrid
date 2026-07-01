@@ -54,7 +54,19 @@ _cfg = load_config()
 _db = Database(_cfg.database_path)
 
 
-async def sync_user(user_id: str, app_token: str, huami_user_id: str, region: str) -> None:
+async def sync_user(
+    user_id: str,
+    app_token: str,
+    huami_user_id: str,
+    region: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> None:
+    """start_date/end_date override the "since last synced measurement"
+    default — used by backfill_zepp.py to force-refetch an explicit window
+    (e.g. to repair a gap). Safe to re-run over a range that already has
+    data: rows dedup on (user_id, date) via upsert.
+    """
     adapter = CloudSessionAdapter(app_token=app_token, user_id=huami_user_id, region=region)
 
     if not await adapter.connect():
@@ -63,19 +75,20 @@ async def sync_user(user_id: str, app_token: str, huami_user_id: str, region: st
     sync_svc = SyncService(adapter, _db)
     query_svc = QueryService(_db, huami_user_id)
 
-    result = (
-        supabase.table("zepp_body_composition")
-        .select("measured_at")
-        .eq("user_id", user_id)
-        .order("measured_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-    if result.data:
-        start_date = result.data[0]["measured_at"][:10]
-    else:
-        start_date = (datetime.date.today() - datetime.timedelta(days=90)).isoformat()
-    end_date = datetime.date.today().isoformat()
+    if start_date is None:
+        result = (
+            supabase.table("zepp_body_composition")
+            .select("measured_at")
+            .eq("user_id", user_id)
+            .order("measured_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            start_date = result.data[0]["measured_at"][:10]
+        else:
+            start_date = (datetime.date.today() - datetime.timedelta(days=90)).isoformat()
+    end_date = end_date or datetime.date.today().isoformat()
 
     print(f"  Syncing {start_date} to {end_date}...")
     await sync_svc.sync_data_type("body_measurements", start_date=start_date, end_date=end_date)

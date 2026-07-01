@@ -17,6 +17,7 @@ already reads from garmin_tokens.json.
 """
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -27,6 +28,7 @@ import requests
 from supabase import create_client
 
 sys.path.insert(0, os.path.dirname(__file__))
+import backfill_garmin  # noqa: E402
 from crypto_utils import decrypt, encrypt  # noqa: E402
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -117,6 +119,23 @@ def connect_garmin(email: str, password: str) -> dict:
     return json.loads(client.client.dumps())
 
 
+def run_initial_backfill(user_id: str, payload: dict) -> None:
+    """Best-effort. The connect itself already succeeded and is recorded —
+    a backfill failure here (e.g. Garmin rate-limits a 90-day pull right
+    after login) must not flip the connection back to needs_reauth. Worst
+    case the user has a thin history and can re-run backfill_garmin.py by
+    hand, or wait for it to fill in day-by-day via the recurring sync.
+    """
+    end_date = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    start_date = (datetime.date.fromisoformat(end_date)
+                  - datetime.timedelta(days=backfill_garmin.DEFAULT_BACKFILL_DAYS)).isoformat()
+    try:
+        backfill_garmin.run_backfill(supabase, user_id, payload, start_date, end_date)
+        print(f"Initial backfill OK for {user_id}: {start_date} -> {end_date}")
+    except Exception as e:
+        print(f"Initial backfill failed (connection still OK): {e}", file=sys.stderr)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--login-id", required=True)
@@ -136,6 +155,9 @@ def main() -> None:
         store_credentials(user_id, source, payload)
         set_status(user_id, source, "connected")
         print(f"Connected {source} for user {user_id}")
+
+        if source == "garmin":
+            run_initial_backfill(user_id, payload)
 
     except Exception as e:
         # Sanitized — never includes the raw password.

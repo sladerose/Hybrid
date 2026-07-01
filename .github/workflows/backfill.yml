@@ -1,0 +1,107 @@
+name: Backfill Data
+
+# Manual gap-fill for one user + one source over an explicit date range.
+# Use this when a sync failed for a few days, a token was dead for a while,
+# or the automatic connect-time backfill (Garmin only, see connect.yml)
+# didn't fully cover what you need. Safe to re-run over dates that already
+# have data — every write is an upsert.
+#
+# Run from the Actions tab (pick source/user_id/dates), or via CLI:
+#   gh workflow run backfill.yml -f source=garmin -f user_id=<uuid> \
+#     -f start_date=2025-09-01 -f end_date=2025-12-31
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Which integration to backfill"
+        required: true
+        type: choice
+        options: [garmin, strava, zepp]
+      user_id:
+        description: "auth.users.id (uuid) of the user to backfill"
+        required: true
+      start_date:
+        description: "YYYY-MM-DD. Leave blank to use --days back from end_date/today."
+        required: false
+      end_date:
+        description: "YYYY-MM-DD. Leave blank to default to today (Garmin/Strava use yesterday)."
+        required: false
+      days:
+        description: "Used only when start_date is blank. Default 90."
+        required: false
+        default: "90"
+
+jobs:
+  backfill-garmin:
+    if: inputs.source == 'garmin'
+    name: Backfill Garmin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+      - run: pip install -r scripts/requirements.txt
+      - name: Run Garmin backfill
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
+        run: |
+          python scripts/backfill_garmin.py \
+            --user-id "${{ inputs.user_id }}" \
+            --days "${{ inputs.days }}" \
+            ${{ inputs.start_date && format('--start-date {0}', inputs.start_date) || '' }} \
+            ${{ inputs.end_date && format('--end-date {0}', inputs.end_date) || '' }}
+
+  backfill-strava:
+    if: inputs.source == 'strava'
+    name: Backfill Strava
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+      - run: pip install -r scripts/requirements.txt
+      - name: Run Strava backfill
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
+          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+        run: |
+          python scripts/backfill_strava.py \
+            --user-id "${{ inputs.user_id }}" \
+            --days "${{ inputs.days }}" \
+            ${{ inputs.start_date && format('--start-date {0}', inputs.start_date) || '' }}
+
+  backfill-zepp:
+    if: inputs.source == 'zepp'
+    name: Backfill Zepp
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements_zepp.txt
+      - run: pip install -r scripts/requirements_zepp.txt
+      - name: Run Zepp backfill
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
+        run: |
+          python scripts/backfill_zepp.py \
+            --user-id "${{ inputs.user_id }}" \
+            --days "${{ inputs.days }}" \
+            ${{ inputs.start_date && format('--start-date {0}', inputs.start_date) || '' }} \
+            ${{ inputs.end_date && format('--end-date {0}', inputs.end_date) || '' }}

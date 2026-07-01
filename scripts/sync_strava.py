@@ -112,25 +112,33 @@ def get_best_efforts(headers, activity_id):
     }
 
 
-def sync_user(user_id: str, refresh_token: str) -> None:
+def sync_user(user_id: str, refresh_token: str, since_ts: int | None = None) -> None:
+    """since_ts overrides the "since last synced activity" default — used by
+    backfill_strava.py to force-refetch an explicit window (e.g. to repair a
+    gap). Re-fetching a range that already has rows is safe: everything
+    downstream upserts on the Strava activity id.
+    """
     access_token, new_refresh_token = get_access_token(refresh_token)
     if new_refresh_token != refresh_token:
         update_payload(user_id, "strava", {"refresh_token": new_refresh_token})
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    result = (
-        supabase.table("strava_activities")
-        .select("start_datetime")
-        .eq("user_id", user_id)
-        .order("start_datetime", desc=True)
-        .limit(1)
-        .execute()
-    )
-    if result.data:
-        last_dt = result.data[0]["start_datetime"]
-        last_ts = int(datetime.datetime.fromisoformat(last_dt.replace("Z", "+00:00")).timestamp()) + 1
+    if since_ts is not None:
+        last_ts = since_ts
     else:
-        last_ts = int((datetime.datetime.utcnow() - datetime.timedelta(days=90)).timestamp())
+        result = (
+            supabase.table("strava_activities")
+            .select("start_datetime")
+            .eq("user_id", user_id)
+            .order("start_datetime", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            last_dt = result.data[0]["start_datetime"]
+            last_ts = int(datetime.datetime.fromisoformat(last_dt.replace("Z", "+00:00")).timestamp()) + 1
+        else:
+            last_ts = int((datetime.datetime.utcnow() - datetime.timedelta(days=90)).timestamp())
 
     activities = fetch_activities(headers, last_ts)
     print(f"  Fetched {len(activities)} new activities")

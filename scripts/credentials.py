@@ -46,6 +46,23 @@ def get_active_users(source: str) -> list[UserCredential]:
     return creds
 
 
+def get_user_credential(user_id: str, source: str) -> UserCredential:
+    """Single-user lookup for manual/backfill scripts (vs. the batch get_active_users)."""
+    result = (
+        _supabase.table("user_credentials")
+        .select("user_id, encrypted_payload")
+        .eq("user_id", user_id)
+        .eq("source", source)
+        .single()
+        .execute()
+    )
+    row = result.data
+    if not row:
+        raise RuntimeError(f"No {source} credential stored for user {user_id}")
+    payload = json.loads(decrypt(row["encrypted_payload"]))
+    return UserCredential(user_id=row["user_id"], payload=payload)
+
+
 def update_payload(user_id: str, source: str, payload: dict) -> None:
     """Rewrite a user's stored credential payload — used for token rotation."""
     _supabase.table("user_credentials").upsert(
