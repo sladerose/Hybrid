@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Sync yesterday's Garmin data to Supabase.
+"""Sync Garmin data to Supabase for yesterday (finalized) and today (partial).
+
+Garmin finalizes full-day totals (steps, stress, calories) only once the day
+ends, so "yesterday" is the newest *complete* row. But sleep and resting HR
+are keyed by wake-date and known the moment the user wakes up — syncing
+"today" too means last night's sleep drives the readiness panel same-day
+instead of sitting unused until tomorrow's run. Today's row is necessarily
+partial and gets overwritten (upsert) as the day progresses and by
+tomorrow's "yesterday" pass once finalized.
 
 Auth: reads GARMIN_REFRESH_TOKEN env var, writes a minimal garmin_tokens.json,
 then lets garminconnect auto-refresh the access token on login. After login,
@@ -68,16 +76,17 @@ client.login(TOKEN_PATH)
 _rotate_refresh_token()
 
 yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+today = datetime.date.today().isoformat()
 errors = []
 
-print(f"Syncing Garmin data for {yesterday}...")
+
+def pct(part, total):
+    return round(part / total * 100, 1) if total > 0 else None
 
 
-# ── garmin_daily ─────────────────────────────────────────────────────────────
-
-try:
-    stats = client.get_stats(yesterday)
-    sleep_raw = client.get_sleep_data(yesterday)
+def sync_daily(date_str):
+    stats = client.get_stats(date_str)
+    sleep_raw = client.get_sleep_data(date_str)
 
     sleep_dto = (sleep_raw or {}).get("dailySleepDTO", {})
     deep_s = sleep_dto.get("deepSleepSeconds") or 0
@@ -85,9 +94,6 @@ try:
     rem_s = sleep_dto.get("remSleepSeconds") or 0
     awake_s = sleep_dto.get("awakeSleepSeconds") or 0
     total_s = deep_s + light_s + rem_s + awake_s
-
-    def pct(part, total):
-        return round(part / total * 100, 1) if total > 0 else None
 
     sleep_time_s = sleep_dto.get("sleepTimeSeconds")
     sleep_hours = round(sleep_time_s / 3600, 2) if sleep_time_s else None
@@ -101,7 +107,7 @@ try:
 
     row = {
         "user_id": USER_ID,
-        "date": yesterday,
+        "date": date_str,
         "total_steps": stats.get("totalSteps"),
         "step_goal": stats.get("dailyStepGoal"),
         "distance_meters": stats.get("totalDistanceMeters"),
@@ -142,51 +148,93 @@ try:
     }
 
     supabase.table("garmin_daily").upsert(row, on_conflict="user_id,date").execute()
-    print(f"  garmin_daily OK")
-except Exception as e:
-    errors.append(f"garmin_daily: {e}")
-    print(f"  garmin_daily FAILED: {e}", file=sys.stderr)
 
 
-# ── garmin_activities ─────────────────────────────────────────────────────────
-
-try:
-    raw = client.get_activities_fordate(yesterday)
+def sync_activities(date_str):
+    raw = client.get_activities_fordate(date_str)
     activities = (raw or {}).get("ActivitiesForDay", {}).get("payload", [])
-    if activities:
-        rows = []
-        for a in activities:
-            atype = a.get("activityType", {})
-            etype = a.get("eventType", {})
+    if not activities:
+        return 0
+    rows = []
+    for a in activities:
+        atype = a.get("activityType", {})
+        etype = a.get("eventType", {})
+        rows.append({
+            "id": a.get("activityId"),
+            "user_id": USER_ID,
+            "name": a.get("activityName"),
+            "activity_type": atype.get("typeKey") if isinstance(atype, dict) else atype,
+            "event_type": etype.get("typeKey") if isinstance(etype, dict) else etype,
+            "start_time": a.get("startTimeGMT"),
+            "start_date": date_str,
+            "duration_seconds": a.get("duration"),
+            "distance_meters": a.get("distance"),
+            "calories": a.get("calories"),
+            "avg_hr_bpm": a.get("averageHR"),
+            "max_hr_bpm": a.get("maxHR"),
+            "steps": a.get("steps"),
+            "elevation_gain_meters": a.get("elevationGain"),
+            "elevation_loss_meters": a.get("elevationLoss"),
+            "lap_count": a.get("lapCount"),
+            "moderate_intensity_minutes": a.get("moderateIntensityMinutes"),
+            "vigorous_intensity_minutes": a.get("vigorousIntensityMinutes"),
+            "is_strength": atype.get("typeKey") == "other" if isinstance(atype, dict) else False,
+            "synced_at": datetime.datetime.utcnow().isoformat(),
+        })
+    supabase.table("garmin_activities").upsert(rows, on_conflict="id").execute()
+    return len(rows)
+
+
+def sync_bp(date_str):
+    bp = client.get_blood_pressure(date_str, date_str)
+    summaries = (bp or {}).get("measurementSummaries", [])
+    rows = []
+    for day in summaries:
+        for m in day.get("measurements", []):
+            measured_at = m.get("measurementTimestampGMT")
+            if not measured_at:
+                continue
             rows.append({
-                "id": a.get("activityId"),
                 "user_id": USER_ID,
-                "name": a.get("activityName"),
-                "activity_type": atype.get("typeKey") if isinstance(atype, dict) else atype,
-                "event_type": etype.get("typeKey") if isinstance(etype, dict) else etype,
-                "start_time": a.get("startTimeGMT"),
-                "start_date": yesterday,
-                "duration_seconds": a.get("duration"),
-                "distance_meters": a.get("distance"),
-                "calories": a.get("calories"),
-                "avg_hr_bpm": a.get("averageHR"),
-                "max_hr_bpm": a.get("maxHR"),
-                "steps": a.get("steps"),
-                "elevation_gain_meters": a.get("elevationGain"),
-                "elevation_loss_meters": a.get("elevationLoss"),
-                "lap_count": a.get("lapCount"),
-                "moderate_intensity_minutes": a.get("moderateIntensityMinutes"),
-                "vigorous_intensity_minutes": a.get("vigorousIntensityMinutes"),
-                "is_strength": atype.get("typeKey") == "other" if isinstance(atype, dict) else False,
+                "measured_at": measured_at,
+                "measured_date": measured_at[:10],
+                "systolic": m.get("systolic"),
+                "diastolic": m.get("diastolic"),
+                "pulse": m.get("pulse"),
+                "source_type": m.get("sourceType"),
+                "notes": m.get("notes"),
                 "synced_at": datetime.datetime.utcnow().isoformat(),
             })
-        supabase.table("garmin_activities").upsert(rows, on_conflict="id").execute()
-        print(f"  garmin_activities OK ({len(rows)} activities)")
-    else:
-        print(f"  garmin_activities: no activities for {yesterday}")
-except Exception as e:
-    errors.append(f"garmin_activities: {e}")
-    print(f"  garmin_activities FAILED: {e}", file=sys.stderr)
+    if rows:
+        supabase.table("blood_pressure_readings").upsert(
+            rows, on_conflict="user_id,measured_at"
+        ).execute()
+    return len(rows)
+
+
+print(f"Syncing Garmin data for {yesterday} (finalized) and {today} (partial)...")
+
+for date_str in (yesterday, today):
+    try:
+        sync_daily(date_str)
+        print(f"  garmin_daily OK ({date_str})")
+    except Exception as e:
+        errors.append(f"garmin_daily {date_str}: {e}")
+        print(f"  garmin_daily FAILED ({date_str}): {e}", file=sys.stderr)
+
+    try:
+        count = sync_activities(date_str)
+        print(f"  garmin_activities OK ({date_str}, {count} activities)")
+    except Exception as e:
+        errors.append(f"garmin_activities {date_str}: {e}")
+        print(f"  garmin_activities FAILED ({date_str}): {e}", file=sys.stderr)
+
+    try:
+        count = sync_bp(date_str)
+        print(f"  blood_pressure_readings OK ({date_str}, {count} readings)")
+    except Exception as e:
+        errors.append(f"blood_pressure_readings {date_str}: {e}")
+        print(f"  blood_pressure_readings FAILED ({date_str}): {e}", file=sys.stderr)
 
 
 # ── garmin_fitness_age ───────────────────────────────────────────────────────
@@ -248,7 +296,6 @@ except Exception as e:
 # ── garmin_weekly_stress ──────────────────────────────────────────────────────
 
 try:
-    today = datetime.date.today().isoformat()
     weekly = client.get_weekly_stress(today, 52)
     if weekly:
         rows = []
@@ -270,40 +317,6 @@ try:
 except Exception as e:
     errors.append(f"garmin_weekly_stress: {e}")
     print(f"  garmin_weekly_stress FAILED: {e}", file=sys.stderr)
-
-
-# ── blood_pressure_readings ──────────────────────────────────────────────────
-
-try:
-    bp = client.get_blood_pressure(yesterday, yesterday)
-    summaries = (bp or {}).get("measurementSummaries", [])
-    rows = []
-    for day in summaries:
-        for m in day.get("measurements", []):
-            measured_at = m.get("measurementTimestampGMT")
-            if not measured_at:
-                continue
-            rows.append({
-                "user_id": USER_ID,
-                "measured_at": measured_at,
-                "measured_date": measured_at[:10],
-                "systolic": m.get("systolic"),
-                "diastolic": m.get("diastolic"),
-                "pulse": m.get("pulse"),
-                "source_type": m.get("sourceType"),
-                "notes": m.get("notes"),
-                "synced_at": datetime.datetime.utcnow().isoformat(),
-            })
-    if rows:
-        supabase.table("blood_pressure_readings").upsert(
-            rows, on_conflict="user_id,measured_at"
-        ).execute()
-        print(f"  blood_pressure_readings OK ({len(rows)} readings)")
-    else:
-        print(f"  blood_pressure_readings: no readings for {yesterday}")
-except Exception as e:
-    errors.append(f"blood_pressure_readings: {e}")
-    print(f"  blood_pressure_readings FAILED: {e}", file=sys.stderr)
 
 
 # ── Exit ──────────────────────────────────────────────────────────────────────
