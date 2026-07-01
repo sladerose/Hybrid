@@ -1,5 +1,5 @@
-import { verifyUser, supabaseAdmin } from './_lib/supabaseAdmin'
-import { encrypt } from './_lib/crypto'
+import { verifyUser, supabaseAdmin } from './_lib/supabaseAdmin.js'
+import { encrypt } from './_lib/crypto.js'
 
 export const config = { runtime: 'nodejs' }
 

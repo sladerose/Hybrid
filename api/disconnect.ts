@@ -1,4 +1,4 @@
-import { verifyUser, supabaseAdmin } from './_lib/supabaseAdmin'
+import { verifyUser, supabaseAdmin } from './_lib/supabaseAdmin.js'
 
 export const config = { runtime: 'nodejs' }
 
