@@ -15,7 +15,7 @@ Personal fitness analytics dashboard built for a single athlete. Unifies data fr
 ## Pages
 
 - `/dashboard` — Daily readiness: body battery, RHR, sleep, stress, steps, 270-day heatmap
-- `/recovery` — RHR trend, sleep stages, stress, body battery, scatter correlations
+- `/recovery` — RHR trend, sleep stages, stress, body battery, blood pressure, scatter correlations
 - `/running` — Weekly volume, pace, lap breakdown, cadence trend, best efforts
 - `/strength` — Session volume, exercise progression, muscle group balance
 - `/body` — Weight, body fat %, muscle mass, visceral fat, metabolic age
@@ -24,7 +24,7 @@ Personal fitness analytics dashboard built for a single athlete. Unifies data fr
 
 | Source | Transport | Tables |
 |---|---|---|
-| Garmin Connect | `garminconnect` Python lib | `garmin_daily`, `garmin_activities`, `garmin_weekly_stress` |
+| Garmin Connect | `garminconnect` Python lib | `garmin_daily`, `garmin_activities`, `garmin_weekly_stress`, `blood_pressure_readings` |
 | Strava | OAuth REST API | `strava_activities`, `strava_run_performance` |
 | Zepp Life (Amazfit scale) | `zepp-life-mcp` lib | `zepp_body_composition` |
 
@@ -33,7 +33,7 @@ Personal fitness analytics dashboard built for a single athlete. Unifies data fr
 GitHub Actions workflow runs at 06:00, 12:00, 18:00, 00:00 SAST.
 
 Scripts in `scripts/`:
-- `sync_garmin.py` — previous day wellness + activities + weekly stress
+- `sync_garmin.py` — previous day wellness + activities + weekly stress + blood pressure
 - `sync_strava.py` — new activities since last sync, with lap + best effort detail
 - `sync_zepp.py` — body composition measurements
 
