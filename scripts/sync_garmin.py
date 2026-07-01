@@ -92,6 +92,13 @@ try:
     sleep_time_s = sleep_dto.get("sleepTimeSeconds")
     sleep_hours = round(sleep_time_s / 3600, 2) if sleep_time_s else None
 
+    sleep_start_ms = sleep_dto.get("sleepStartTimestampGMT")
+    sleep_start_time = (
+        datetime.datetime.fromtimestamp(sleep_start_ms / 1000.0, tz=datetime.timezone.utc).isoformat()
+        if sleep_start_ms
+        else None
+    )
+
     row = {
         "user_id": USER_ID,
         "date": yesterday,
@@ -130,6 +137,7 @@ try:
         "sleep_deep_percent": pct(deep_s, total_s),
         "sleep_light_percent": pct(light_s, total_s),
         "sleep_rem_percent": pct(rem_s, total_s),
+        "sleep_start_time": sleep_start_time,
         "synced_at": datetime.datetime.utcnow().isoformat(),
     }
 
