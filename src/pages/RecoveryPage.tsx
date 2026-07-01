@@ -43,6 +43,21 @@ type CorrRow = {
   next_bb_high: number | null
   week_vigorous_total: number | null
   week_avg_bb_high: string | null
+  avg_systolic: string | null
+  avg_diastolic: string | null
+}
+
+type BPRow = {
+  date: string
+  num_measurements: number
+  high_systolic: number
+  low_systolic: number
+  avg_systolic: string
+  high_diastolic: number
+  low_diastolic: number
+  avg_diastolic: string
+  avg_pulse: string | null
+  category: 'NORMAL' | 'ELEVATED' | 'STAGE_1' | 'STAGE_2' | 'CRISIS'
 }
 
 type StressRow = {
@@ -219,6 +234,87 @@ function StressRHRChart({ data }: { data: TrendRow[] }) {
         <Line yAxisId="rhr" type="monotone" dataKey="rhr7" name="RHR 7d avg" stroke="#ef4444" strokeWidth={1} strokeDasharray="5 4" strokeOpacity={0.5} dot={false} connectNulls legendType="none" />
       </ComposedChart>
     </ResponsiveContainer>
+  )
+}
+
+// ── Blood pressure ────────────────────────────────────────────────────────────
+
+const BP_CATEGORY_STYLE: Record<BPRow['category'], { label: string; color: string; bg: string }> = {
+  NORMAL:   { label: 'Normal',        color: '#10b981', bg: 'bg-emerald-500/10 text-emerald-400' },
+  ELEVATED: { label: 'Elevated',      color: '#f59e0b', bg: 'bg-amber-500/10 text-amber-400' },
+  STAGE_1:  { label: 'Stage 1 High',  color: '#f97316', bg: 'bg-orange-500/10 text-orange-400' },
+  STAGE_2:  { label: 'Stage 2 High',  color: '#ef4444', bg: 'bg-red-500/10 text-red-400' },
+  CRISIS:   { label: 'Crisis',        color: '#b91c1c', bg: 'bg-red-700/10 text-red-500' },
+}
+
+function BPChart({ data }: { data: BPRow[] }) {
+  const { TIP, GRID, TICK } = useChartTheme()
+  const chartData = [...data]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(d => ({
+      label: format(parseISO(d.date), 'd MMM'),
+      systolic: n(d.avg_systolic),
+      diastolic: n(d.avg_diastolic),
+      high: d.high_systolic,
+      low: d.low_systolic,
+    }))
+
+  return (
+    <ResponsiveContainer width="99%" height={220}>
+      <ComposedChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+        <XAxis dataKey="label" tick={TICK} tickLine={false} />
+        <YAxis domain={[50, 150]} tick={TICK} tickLine={false} axisLine={false} width={28} />
+        <ReferenceLine y={120} stroke="#f59e0b" strokeDasharray="4 4" strokeOpacity={0.4}
+          label={{ value: '120', fill: '#6b7280', fontSize: 9, position: 'insideTopRight' }} />
+        <ReferenceLine y={80} stroke="#6b7280" strokeDasharray="4 4" strokeOpacity={0.4}
+          label={{ value: '80', fill: '#6b7280', fontSize: 9, position: 'insideTopRight' }} />
+        <Tooltip
+          contentStyle={TIP}
+          labelStyle={{ color: '#9ca3af' }}
+          formatter={(v: unknown, name: unknown): [string, string] => [`${Number(v).toFixed(0)} mmHg`, String(name)]}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+          formatter={(v: unknown) => <span style={{ color: '#9ca3af' }}>{String(v)}</span>}
+        />
+        <Line type="monotone" dataKey="systolic" name="Systolic" stroke="#ec4899" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+        <Line type="monotone" dataKey="diastolic" name="Diastolic" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+
+function BPSummaryCard({ data }: { data: BPRow[] }) {
+  if (!data.length) return null
+  const latest = [...data].sort((a, b) => b.date.localeCompare(a.date))[0]
+  const style = BP_CATEGORY_STYLE[latest.category]
+
+  return (
+    <Card>
+      <ChartHeader title="Latest Reading" sub={format(parseISO(latest.date), 'd MMM yyyy')} />
+      <div className="flex items-baseline gap-2 mb-2">
+        <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+          {Math.round(Number(latest.avg_systolic))}/{Math.round(Number(latest.avg_diastolic))}
+        </p>
+        <span className="text-xs text-gray-500">mmHg</span>
+      </div>
+      <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium ${style.bg}`}>
+        {style.label}
+      </span>
+      <StatRow
+        label="Range that day"
+        value={`${latest.low_systolic}-${latest.high_systolic}`}
+        unit="systolic"
+        accent="text-gray-400"
+      />
+      <StatRow
+        label="Avg pulse"
+        value={latest.avg_pulse ? Number(latest.avg_pulse).toFixed(0) : '--'}
+        unit="bpm"
+        accent="text-red-400"
+      />
+    </Card>
   )
 }
 
@@ -598,6 +694,7 @@ export default function RecoveryPage() {
   const [stress, setStress] = useState<StressRow[]>([])
   const [runLoad, setRunLoad] = useState<RunLoadRow[]>([])
   const [respiration, setRespiration] = useState<RespRow[]>([])
+  const [bp, setBp] = useState<BPRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -619,7 +716,7 @@ export default function RecoveryPage() {
         .limit(30),
       supabase
         .from('v_correlations')
-        .select('date,sleep_hours,avg_stress,resting_hr,next_bb_high,week_vigorous_total,week_avg_bb_high')
+        .select('date,sleep_hours,avg_stress,resting_hr,next_bb_high,week_vigorous_total,week_avg_bb_high,avg_systolic,avg_diastolic')
         .eq('user_id', uid)
         .order('date', { ascending: false }),
       supabase
@@ -640,13 +737,20 @@ export default function RecoveryPage() {
         .not('avg_waking_respiration', 'is', null)
         .order('date', { ascending: false })
         .limit(90),
-    ]).then(([t, s, c, w, rl, resp]) => {
+      supabase
+        .from('v_blood_pressure_daily')
+        .select('date,num_measurements,high_systolic,low_systolic,avg_systolic,high_diastolic,low_diastolic,avg_diastolic,avg_pulse,category')
+        .eq('user_id', uid)
+        .order('date', { ascending: false })
+        .limit(60),
+    ]).then(([t, s, c, w, rl, resp, bpRows]) => {
       setTrend(t.data ?? [])
       setSleep(s.data ?? [])
       setCorr(c.data ?? [])
       setStress(w.data ?? [])
       setRunLoad(rl.data ?? [])
       setRespiration(resp.data ?? [])
+      setBp(bpRows.data ?? [])
       setLoading(false)
     })
   }, [user])
@@ -684,6 +788,14 @@ export default function RecoveryPage() {
         return true
       })
   }, [corr])
+
+  const stressToBP = useMemo(
+    () =>
+      corr
+        .filter(d => d.avg_stress != null && d.avg_systolic != null)
+        .map(d => ({ x: d.avg_stress as number, y: Number(d.avg_systolic) })),
+    [corr],
+  )
 
   // ── Sleep summary stats ──
 
@@ -729,6 +841,22 @@ export default function RecoveryPage() {
           <StressRHRChart data={trend} />
         </Card>
       </div>
+
+      {/* Blood pressure */}
+      {bp.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+          <Card className="lg:col-span-8">
+            <ChartHeader
+              title="Blood Pressure"
+              sub={`Last ${bp.length} day${bp.length === 1 ? '' : 's'} · avg systolic/diastolic · dashed lines at 120/80 mmHg`}
+            />
+            <BPChart data={bp} />
+          </Card>
+          <div className="lg:col-span-4">
+            <BPSummaryCard data={bp} />
+          </div>
+        </div>
+      )}
 
       {/* Respiration trend */}
       {respiration.length > 0 && (
@@ -822,6 +950,18 @@ export default function RecoveryPage() {
             xDomain={[0, 200]}
             yDomain={[40, 100]}
             refX={150}
+          />
+          <ScatterPanel
+            data={stressToBP}
+            xLabel="Avg stress"
+            yLabel="Systolic (mmHg)"
+            title="Stress → Blood Pressure"
+            sub="Does stress track with same-day systolic?"
+            dotColor="#ec4899"
+            xDomain={[15, 80]}
+            yDomain={[90, 150]}
+            refX={40}
+            refY={120}
           />
         </div>
       </div>

@@ -272,6 +272,40 @@ except Exception as e:
     print(f"  garmin_weekly_stress FAILED: {e}", file=sys.stderr)
 
 
+# ── blood_pressure_readings ──────────────────────────────────────────────────
+
+try:
+    bp = client.get_blood_pressure(yesterday, yesterday)
+    summaries = (bp or {}).get("measurementSummaries", [])
+    rows = []
+    for day in summaries:
+        for m in day.get("measurements", []):
+            measured_at = m.get("measurementTimestampGMT")
+            if not measured_at:
+                continue
+            rows.append({
+                "user_id": USER_ID,
+                "measured_at": measured_at,
+                "measured_date": measured_at[:10],
+                "systolic": m.get("systolic"),
+                "diastolic": m.get("diastolic"),
+                "pulse": m.get("pulse"),
+                "source_type": m.get("sourceType"),
+                "notes": m.get("notes"),
+                "synced_at": datetime.datetime.utcnow().isoformat(),
+            })
+    if rows:
+        supabase.table("blood_pressure_readings").upsert(
+            rows, on_conflict="user_id,measured_at"
+        ).execute()
+        print(f"  blood_pressure_readings OK ({len(rows)} readings)")
+    else:
+        print(f"  blood_pressure_readings: no readings for {yesterday}")
+except Exception as e:
+    errors.append(f"blood_pressure_readings: {e}")
+    print(f"  blood_pressure_readings FAILED: {e}", file=sys.stderr)
+
+
 # ── Exit ──────────────────────────────────────────────────────────────────────
 
 if errors:
