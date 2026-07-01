@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Sync Garmin data to Supabase for yesterday (finalized) and today (partial).
+"""Sync Garmin data to Supabase for yesterday (finalized) and today (partial),
+for every user with a stored Garmin credential (see credentials.py).
 
 Garmin finalizes full-day totals (steps, stress, calories) only once the day
 ends, so "yesterday" is the newest *complete* row. But sleep and resting HR
@@ -9,82 +10,54 @@ instead of sitting unused until tomorrow's run. Today's row is necessarily
 partial and gets overwritten (upsert) as the day progresses and by
 tomorrow's "yesterday" pass once finalized.
 
-Auth: reads GARMIN_REFRESH_TOKEN env var, writes a minimal garmin_tokens.json,
-then lets garminconnect auto-refresh the access token on login. After login,
-rotates the new refresh token back to GitHub Secrets via GH_TOKEN + GH_PAT.
+Auth: each user's stored payload is the exact {di_token, di_refresh_token,
+di_client_id} shape garminconnect's Garmin.client.dumps() produces (see the
+Garmin token-shape spike in connect_account.py's docstring). It's written to
+a per-user temp tokenstore directory and loaded via Garmin().login(tokenstore=...)
+— any refresh that happens during login is re-persisted back to that user's
+user_credentials row afterward, replacing the old gh-secret-rotation dance.
+
+GitHub Secrets required:
+  SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, CREDENTIAL_ENCRYPTION_KEY
 """
 
-import os
-import subprocess
-import sys
 import datetime
 import json
+import os
+import random
+import sys
+import tempfile
+import time
 
 from garminconnect import Garmin
 from supabase import create_client
 
+sys.path.insert(0, os.path.dirname(__file__))
+from credentials import get_active_users, mark_failed, mark_synced, update_payload  # noqa: E402
+
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-USER_ID = os.environ["SUPABASE_USER_ID"]
-TOKEN_PATH = os.path.expanduser("~/.garminconnect")
-GARMIN_CLIENT_ID = "GARMIN_CONNECT_MOBILE_ANDROID_DI_2025Q2"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-
-def _write_tokens_from_env() -> None:
-    refresh_token = os.environ.get("GARMIN_REFRESH_TOKEN")
-    if not refresh_token:
-        return
-    os.makedirs(TOKEN_PATH, exist_ok=True)
-    tokens = {
-        "di_token": "placeholder",
-        "di_refresh_token": refresh_token,
-        "di_client_id": GARMIN_CLIENT_ID,
-    }
-    with open(os.path.join(TOKEN_PATH, "garmin_tokens.json"), "w") as f:
-        json.dump(tokens, f)
-
-
-def _rotate_refresh_token() -> None:
-    token_file = os.path.join(TOKEN_PATH, "garmin_tokens.json")
-    try:
-        with open(token_file) as f:
-            new_tokens = json.load(f)
-        new_refresh = new_tokens.get("di_refresh_token")
-        repo = os.environ.get("GITHUB_REPOSITORY")
-        if not (new_refresh and repo):
-            return
-        result = subprocess.run(
-            ["gh", "secret", "set", "GARMIN_REFRESH_TOKEN",
-             "--repo", repo, "--body", new_refresh],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0:
-            print("  Garmin refresh token rotated in GitHub Secrets")
-        else:
-            print(f"  WARNING: refresh token rotation failed: {result.stderr.strip()}", file=sys.stderr)
-    except Exception as e:
-        print(f"  WARNING: refresh token rotation error: {e}", file=sys.stderr)
-
-
-_write_tokens_from_env()
-
-client = Garmin()
-client.login(TOKEN_PATH)
-
-_rotate_refresh_token()
-
 yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
 today = datetime.date.today().isoformat()
-errors = []
 
 
 def pct(part, total):
     return round(part / total * 100, 1) if total > 0 else None
 
 
-def sync_daily(date_str):
+def load_client(payload: dict) -> Garmin:
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "garmin_tokens.json"), "w") as f:
+            json.dump(payload, f)
+        client = Garmin()
+        client.login(tokenstore=tmp)
+    return client
+
+
+def sync_daily(client: Garmin, user_id: str, date_str: str) -> None:
     stats = client.get_stats(date_str)
     sleep_raw = client.get_sleep_data(date_str)
 
@@ -106,7 +79,7 @@ def sync_daily(date_str):
     )
 
     row = {
-        "user_id": USER_ID,
+        "user_id": user_id,
         "date": date_str,
         "total_steps": stats.get("totalSteps"),
         "step_goal": stats.get("dailyStepGoal"),
@@ -150,7 +123,7 @@ def sync_daily(date_str):
     supabase.table("garmin_daily").upsert(row, on_conflict="user_id,date").execute()
 
 
-def sync_activities(date_str):
+def sync_activities(client: Garmin, user_id: str, date_str: str) -> int:
     raw = client.get_activities_fordate(date_str)
     activities = (raw or {}).get("ActivitiesForDay", {}).get("payload", [])
     if not activities:
@@ -161,7 +134,7 @@ def sync_activities(date_str):
         etype = a.get("eventType", {})
         rows.append({
             "id": a.get("activityId"),
-            "user_id": USER_ID,
+            "user_id": user_id,
             "name": a.get("activityName"),
             "activity_type": atype.get("typeKey") if isinstance(atype, dict) else atype,
             "event_type": etype.get("typeKey") if isinstance(etype, dict) else etype,
@@ -185,7 +158,7 @@ def sync_activities(date_str):
     return len(rows)
 
 
-def sync_bp(date_str):
+def sync_bp(client: Garmin, user_id: str, date_str: str) -> int:
     bp = client.get_blood_pressure(date_str, date_str)
     summaries = (bp or {}).get("measurementSummaries", [])
     rows = []
@@ -195,7 +168,7 @@ def sync_bp(date_str):
             if not measured_at:
                 continue
             rows.append({
-                "user_id": USER_ID,
+                "user_id": user_id,
                 "measured_at": measured_at,
                 "measured_date": measured_at[:10],
                 "systolic": m.get("systolic"),
@@ -206,125 +179,120 @@ def sync_bp(date_str):
                 "synced_at": datetime.datetime.utcnow().isoformat(),
             })
     if rows:
-        supabase.table("blood_pressure_readings").upsert(
-            rows, on_conflict="user_id,measured_at"
-        ).execute()
+        supabase.table("blood_pressure_readings").upsert(rows, on_conflict="user_id,measured_at").execute()
     return len(rows)
 
 
-print(f"Syncing Garmin data for {yesterday} (finalized) and {today} (partial)...")
-
-for date_str in (yesterday, today):
-    try:
-        sync_daily(date_str)
-        print(f"  garmin_daily OK ({date_str})")
-    except Exception as e:
-        errors.append(f"garmin_daily {date_str}: {e}")
-        print(f"  garmin_daily FAILED ({date_str}): {e}", file=sys.stderr)
-
-    try:
-        count = sync_activities(date_str)
-        print(f"  garmin_activities OK ({date_str}, {count} activities)")
-    except Exception as e:
-        errors.append(f"garmin_activities {date_str}: {e}")
-        print(f"  garmin_activities FAILED ({date_str}): {e}", file=sys.stderr)
-
-    try:
-        count = sync_bp(date_str)
-        print(f"  blood_pressure_readings OK ({date_str}, {count} readings)")
-    except Exception as e:
-        errors.append(f"blood_pressure_readings {date_str}: {e}")
-        print(f"  blood_pressure_readings FAILED ({date_str}): {e}", file=sys.stderr)
-
-
-# ── garmin_fitness_age ───────────────────────────────────────────────────────
-
-try:
+def sync_fitness_age(client: Garmin, user_id: str) -> None:
     fa = client.get_fitnessage_data(yesterday)
-    if fa:
-        dto = fa.get("biometricAgeDTO") or fa.get("fitnessAgeDTO") or (fa if isinstance(fa, dict) else {})
-        components = dto.get("components") or {}
-
-        fitness_age = dto.get("fitnessAge") or dto.get("biometricAge")
-        chrono_age = dto.get("chronologicalAge")
-        achievable = dto.get("achievableFitnessAge") or dto.get("achievableBiometricAge") or dto.get("bestFitnessAge")
-        gap = dto.get("fitnessAgeGap") or dto.get("ageDifference") or (
-            round(chrono_age - fitness_age, 1) if chrono_age and fitness_age else None
-        )
-
-        def _comp(key, field="value"):
-            c = components.get(key) or {}
-            return c.get(field) if isinstance(c, dict) else None
-
-        row = {
-            "user_id": USER_ID,
-            "date": yesterday,
-            "fitness_age": fitness_age,
-            "chronological_age": chrono_age,
-            "age_difference": gap,
-            "achievable_fitness_age": achievable,
-            "rhr": dto.get("rhr") or dto.get("restingHeartRate") or _comp("rhr"),
-            "bmi": dto.get("bmi") or _comp("bmi"),
-            "vigorous_minutes_avg": dto.get("vigorousMinutesAvg") or _comp("vigorousMinutesAvg"),
-            "vigorous_days_avg": dto.get("vigorousDaysAvg") or _comp("vigorousDaysAvg"),
-            "synced_at": datetime.datetime.utcnow().isoformat(),
-        }
-
-        # Check if row for this date already exists (table has no guaranteed unique constraint)
-        existing = supabase.table("garmin_fitness_age") \
-            .select("id") \
-            .eq("user_id", USER_ID) \
-            .eq("date", yesterday) \
-            .execute()
-
-        if existing.data:
-            supabase.table("garmin_fitness_age") \
-                .update(row) \
-                .eq("id", existing.data[0]["id"]) \
-                .execute()
-        else:
-            supabase.table("garmin_fitness_age").insert(row).execute()
-
-        print(f"  garmin_fitness_age OK (age {fitness_age})")
-    else:
+    if not fa:
         print(f"  garmin_fitness_age: no data for {yesterday}")
-except Exception as e:
-    errors.append(f"garmin_fitness_age: {e}")
-    print(f"  garmin_fitness_age FAILED: {e}", file=sys.stderr)
+        return
+
+    dto = fa.get("biometricAgeDTO") or fa.get("fitnessAgeDTO") or (fa if isinstance(fa, dict) else {})
+    components = dto.get("components") or {}
+
+    fitness_age = dto.get("fitnessAge") or dto.get("biometricAge")
+    chrono_age = dto.get("chronologicalAge")
+    achievable = dto.get("achievableFitnessAge") or dto.get("achievableBiometricAge") or dto.get("bestFitnessAge")
+    gap = dto.get("fitnessAgeGap") or dto.get("ageDifference") or (
+        round(chrono_age - fitness_age, 1) if chrono_age and fitness_age else None
+    )
+
+    def _comp(key, field="value"):
+        c = components.get(key) or {}
+        return c.get(field) if isinstance(c, dict) else None
+
+    row = {
+        "user_id": user_id,
+        "date": yesterday,
+        "fitness_age": fitness_age,
+        "chronological_age": chrono_age,
+        "age_difference": gap,
+        "achievable_fitness_age": achievable,
+        "rhr": dto.get("rhr") or dto.get("restingHeartRate") or _comp("rhr"),
+        "bmi": dto.get("bmi") or _comp("bmi"),
+        "vigorous_minutes_avg": dto.get("vigorousMinutesAvg") or _comp("vigorousMinutesAvg"),
+        "vigorous_days_avg": dto.get("vigorousDaysAvg") or _comp("vigorousDaysAvg"),
+        "synced_at": datetime.datetime.utcnow().isoformat(),
+    }
+
+    existing = (
+        supabase.table("garmin_fitness_age")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("date", yesterday)
+        .execute()
+    )
+    if existing.data:
+        supabase.table("garmin_fitness_age").update(row).eq("id", existing.data[0]["id"]).execute()
+    else:
+        supabase.table("garmin_fitness_age").insert(row).execute()
+
+    print(f"  garmin_fitness_age OK (age {fitness_age})")
 
 
-# ── garmin_weekly_stress ──────────────────────────────────────────────────────
-
-try:
+def sync_weekly_stress(client: Garmin, user_id: str) -> None:
     weekly = client.get_weekly_stress(today, 52)
-    if weekly:
-        rows = []
-        items = weekly if isinstance(weekly, list) else weekly.get("weeklyStress", [])
-        for item in items:
-            week_start = item.get("startTimestampGMT") or item.get("calendarDate")
-            if week_start:
-                rows.append({
-                    "user_id": USER_ID,
-                    "week_start": week_start[:10],
-                    "stress_value": item.get("overallStressLevel") or item.get("stressLevel"),
-                    "synced_at": datetime.datetime.utcnow().isoformat(),
-                })
-        if rows:
-            supabase.table("garmin_weekly_stress").upsert(
-                rows, on_conflict="user_id,week_start"
-            ).execute()
-            print(f"  garmin_weekly_stress OK ({len(rows)} weeks)")
-except Exception as e:
-    errors.append(f"garmin_weekly_stress: {e}")
-    print(f"  garmin_weekly_stress FAILED: {e}", file=sys.stderr)
+    if not weekly:
+        return
+    rows = []
+    items = weekly if isinstance(weekly, list) else weekly.get("weeklyStress", [])
+    for item in items:
+        week_start = item.get("startTimestampGMT") or item.get("calendarDate")
+        if week_start:
+            rows.append({
+                "user_id": user_id,
+                "week_start": week_start[:10],
+                "stress_value": item.get("overallStressLevel") or item.get("stressLevel"),
+                "synced_at": datetime.datetime.utcnow().isoformat(),
+            })
+    if rows:
+        supabase.table("garmin_weekly_stress").upsert(rows, on_conflict="user_id,week_start").execute()
+        print(f"  garmin_weekly_stress OK ({len(rows)} weeks)")
 
 
-# ── Exit ──────────────────────────────────────────────────────────────────────
+def sync_user(user_id: str, payload: dict) -> None:
+    client = load_client(payload)
 
-if errors:
-    print(f"\n{len(errors)} error(s):")
-    for e in errors:
-        print(f"  - {e}", file=sys.stderr)
-    sys.exit(1)
+    for date_str in (yesterday, today):
+        sync_daily(client, user_id, date_str)
+        print(f"  garmin_daily OK ({date_str})")
 
-print("Done.")
+        count = sync_activities(client, user_id, date_str)
+        print(f"  garmin_activities OK ({date_str}, {count} activities)")
+
+        count = sync_bp(client, user_id, date_str)
+        print(f"  blood_pressure_readings OK ({date_str}, {count} readings)")
+
+    sync_fitness_age(client, user_id)
+    sync_weekly_stress(client, user_id)
+
+    # Persist any token rotation that happened during login/refresh.
+    update_payload(user_id, "garmin", json.loads(client.client.dumps()))
+
+
+def main() -> None:
+    users = get_active_users("garmin")
+    print(f"Syncing Garmin for {len(users)} user(s), {yesterday} (finalized) and {today} (partial)...")
+    failures = 0
+
+    for i, cred in enumerate(users):
+        print(f"[{cred.user_id}] syncing...")
+        try:
+            sync_user(cred.user_id, cred.payload)
+            mark_synced(cred.user_id, "garmin", datetime.datetime.utcnow().isoformat())
+        except Exception as e:
+            failures += 1
+            mark_failed(cred.user_id, "garmin", str(e))
+            print(f"  FAILED: {e}", file=sys.stderr)
+
+        if i < len(users) - 1:
+            time.sleep(random.uniform(2, 8))  # jitter — avoid bursting Garmin's rate limiter
+
+    if users and failures == len(users):
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

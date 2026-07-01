@@ -9,6 +9,7 @@ import RecoveryPage from './pages/RecoveryPage'
 import RunningPage from './pages/RunningPage'
 import StrengthPage from './pages/StrengthPage'
 import BodyPage from './pages/BodyPage'
+import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
               <Route path="/running" element={<RunningPage />} />
               <Route path="/strength" element={<StrengthPage />} />
               <Route path="/body" element={<BodyPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Route>
         </Routes>

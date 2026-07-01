@@ -97,6 +97,9 @@ type PlanWeek = {
 const RACE_DATE = '2026-08-15'
 const RACE_NAME = 'Garmin Run Series 10km'
 const PLAN_TOTAL_DAYS = 54
+// This race plan is hardcoded to Slade's own training block — not yet a
+// per-user feature (see .planning/PRODUCT-STRATEGY.md Phase 3).
+const SLADE_USER_ID = '4671de36-2274-4aa7-bf9c-d185336987c5'
 
 const WORKOUT_STYLES: Record<WorkoutType, { dot: string; badge: string; text: string }> = {
   easy:      { dot: 'bg-blue-400',   badge: 'bg-blue-500/10 border-blue-500/30',     text: 'text-blue-400'   },
@@ -1222,8 +1225,16 @@ export default function RunningPage() {
         </p>
       </div>
 
-      {/* Training plan */}
-      <TrainingPlanSection runs={runs} />
+      {/* Training plan — hardcoded to Slade's own race plan for now (see
+          .planning/PRODUCT-STRATEGY.md Phase 3). Other users get an empty
+          state until per-user training plans exist. */}
+      {user?.id === SLADE_USER_ID ? (
+        <TrainingPlanSection runs={runs} />
+      ) : (
+        <div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-500">
+          No training plan set.
+        </div>
+      )}
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

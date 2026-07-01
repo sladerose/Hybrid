@@ -1,44 +1,31 @@
 #!/usr/bin/env python3
-"""Sync Zepp Life body measurements to Supabase.
+"""Sync Zepp Life body measurements to Supabase, for every user with a
+stored Zepp credential (see credentials.py). Each user's CloudSessionAdapter
+is constructed directly from their decrypted app_token/huami_user_id/region —
+no more global keyring shim, since there's no longer a single shared account.
 
 GitHub Secrets required:
-  ZEPP_APP_TOKEN, ZEPP_USER_ID, ZEPP_REGION
-  SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_USER_ID
+  SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, CREDENTIAL_ENCRYPTION_KEY
 """
 
 import asyncio
-import os
-import sys
-import json
 import datetime
+import json
+import os
+import random
+import sys
 from pathlib import Path
 
-import keyring
-from keyring.backend import KeyringBackend
+from supabase import create_client
 
+sys.path.insert(0, os.path.dirname(__file__))
+from credentials import get_active_users, mark_failed, mark_synced  # noqa: E402
 
-class _EnvKeyring(KeyringBackend):
-    """Read Zepp credentials from env vars instead of system keyring."""
-    priority = 100
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
-    def get_password(self, service, username):
-        if service != "zepp-life-mcp":
-            return None
-        return {
-            "zepp_auth_token": os.environ.get("ZEPP_APP_TOKEN"),
-            "zepp_auth_user_id": os.environ.get("ZEPP_USER_ID"),
-        }.get(username)
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    def set_password(self, service, username, password):
-        pass
-
-    def delete_password(self, service, username):
-        pass
-
-
-keyring.set_keyring(_EnvKeyring())
-
-# Write config.json before importing zepp modules
 _config_dir = Path.home() / ".config" / "zepp-life-mcp"
 _config_dir.mkdir(parents=True, exist_ok=True)
 _data_dir = Path("/tmp/zepp-data")
@@ -46,7 +33,7 @@ _data_dir.mkdir(parents=True, exist_ok=True)
 
 (_config_dir / "config.json").write_text(json.dumps({
     "mode": "cloud_session",
-    "region": os.environ.get("ZEPP_REGION", "us"),
+    "region": "us",
     "timezone": "UTC",
     "database_path": str(_data_dir / "zepp.db"),
     "logs_path": str(_data_dir / "zepp.log"),
@@ -57,85 +44,55 @@ _data_dir.mkdir(parents=True, exist_ok=True)
     "default_lookback_days": 30,
 }))
 
-from zepp_life_mcp.config import load_config
-from zepp_life_mcp.auth import load_token
-from zepp_life_mcp.adapters.cloud_session import CloudSessionAdapter
-from zepp_life_mcp.storage import Database
-from zepp_life_mcp.services.sync_service import SyncService
-from zepp_life_mcp.services.query_service import QueryService
-from supabase import create_client
+from zepp_life_mcp.adapters.cloud_session import CloudSessionAdapter  # noqa: E402
+from zepp_life_mcp.config import load_config  # noqa: E402
+from zepp_life_mcp.services.query_service import QueryService  # noqa: E402
+from zepp_life_mcp.services.sync_service import SyncService  # noqa: E402
+from zepp_life_mcp.storage import Database  # noqa: E402
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-USER_ID = os.environ["SUPABASE_USER_ID"]
-
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+_cfg = load_config()
+_db = Database(_cfg.database_path)
 
 
-async def main():
-    cfg = load_config()
-    app_token, user_id = load_token()
-    db = Database(cfg.database_path)
-    adapter = CloudSessionAdapter(app_token=app_token, user_id=user_id, region=cfg.region)
+async def sync_user(user_id: str, app_token: str, huami_user_id: str, region: str) -> None:
+    adapter = CloudSessionAdapter(app_token=app_token, user_id=huami_user_id, region=region)
 
     if not await adapter.connect():
-        print("Cannot connect to Zepp Life API. Verify ZEPP_APP_TOKEN is valid.", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError("Cannot connect to Zepp Life API — token may be expired")
 
-    sync_svc = SyncService(adapter, db)
-    query_svc = QueryService(db, user_id)
+    sync_svc = SyncService(adapter, _db)
+    query_svc = QueryService(_db, huami_user_id)
 
-    # Determine sync window
-    try:
-        result = supabase.table("zepp_body_composition") \
-            .select("measured_at") \
-            .eq("user_id", USER_ID) \
-            .order("measured_at", desc=True) \
-            .limit(1) \
-            .execute()
-
-        if result.data:
-            start_date = result.data[0]["measured_at"][:10]
-        else:
-            start_date = (datetime.date.today() - datetime.timedelta(days=90)).isoformat()
-    except Exception as e:
-        print(f"Could not determine sync window: {e}", file=sys.stderr)
-        start_date = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
-
+    result = (
+        supabase.table("zepp_body_composition")
+        .select("measured_at")
+        .eq("user_id", user_id)
+        .order("measured_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if result.data:
+        start_date = result.data[0]["measured_at"][:10]
+    else:
+        start_date = (datetime.date.today() - datetime.timedelta(days=90)).isoformat()
     end_date = datetime.date.today().isoformat()
-    print(f"Syncing Zepp body measurements {start_date} to {end_date}...")
 
-    # Pull from Zepp cloud into local SQLite
-    try:
-        await sync_svc.sync_data_type("body_measurements", start_date=start_date, end_date=end_date)
-        print("  Zepp cloud sync OK")
-    except Exception as e:
-        print(f"  Zepp cloud sync FAILED: {e}", file=sys.stderr)
-        sys.exit(1)
+    print(f"  Syncing {start_date} to {end_date}...")
+    await sync_svc.sync_data_type("body_measurements", start_date=start_date, end_date=end_date)
 
-    # Query local SQLite
-    try:
-        measurements = query_svc.get_body_measurements(start_date, end_date)
-        print(f"  Got {len(measurements)} measurements from local DB")
-    except Exception as e:
-        print(f"  Query FAILED: {e}", file=sys.stderr)
-        sys.exit(1)
-
+    measurements = query_svc.get_body_measurements(start_date, end_date)
+    print(f"  Got {len(measurements)} measurements from local DB")
     if not measurements:
-        print("No measurements to sync.")
         return
 
-    # Get existing dates to avoid duplicate-key violations on (user_id, date)
-    try:
-        existing = supabase.table("zepp_body_composition") \
-            .select("date") \
-            .eq("user_id", USER_ID) \
-            .gte("date", start_date) \
-            .execute()
-        existing_dates = {r["date"] for r in (existing.data or [])}
-    except Exception as e:
-        print(f"  Could not fetch existing records: {e}", file=sys.stderr)
-        existing_dates = set()
+    existing = (
+        supabase.table("zepp_body_composition")
+        .select("date")
+        .eq("user_id", user_id)
+        .gte("date", start_date)
+        .execute()
+    )
+    existing_dates = {r["date"] for r in (existing.data or [])}
 
     rows = []
     for m in measurements:
@@ -143,7 +100,7 @@ async def main():
         if not measured_at or str(measured_at)[:10] in existing_dates:
             continue
         rows.append({
-            "user_id": USER_ID,
+            "user_id": user_id,
             "date": str(measured_at)[:10],
             "measured_at": measured_at,
             "weight_kg": m.get("weight_kg"),
@@ -160,20 +117,46 @@ async def main():
             "synced_at": datetime.datetime.utcnow().isoformat(),
         })
 
-    if rows:
-        # Multiple measurements per day possible — keep latest per date before upsert
-        rows_by_date: dict = {}
-        for row in rows:
-            d = row["date"]
-            if d not in rows_by_date or (row["measured_at"] or "") > (rows_by_date[d]["measured_at"] or ""):
-                rows_by_date[d] = row
-        rows = list(rows_by_date.values())
-        supabase.table("zepp_body_composition").upsert(rows, on_conflict="user_id,date").execute()
-        print(f"  zepp_body_composition OK ({len(rows)} rows upserted)")
-    else:
-        print("  zepp_body_composition: no new measurements")
+    if not rows:
+        print("  no new measurements")
+        return
 
-    print("Done.")
+    # Multiple measurements per day possible — keep latest per date before upsert
+    rows_by_date: dict = {}
+    for row in rows:
+        d = row["date"]
+        if d not in rows_by_date or (row["measured_at"] or "") > (rows_by_date[d]["measured_at"] or ""):
+            rows_by_date[d] = row
+    rows = list(rows_by_date.values())
+    supabase.table("zepp_body_composition").upsert(rows, on_conflict="user_id,date").execute()
+    print(f"  zepp_body_composition OK ({len(rows)} rows upserted)")
+
+
+async def main() -> None:
+    users = get_active_users("zepp")
+    print(f"Syncing Zepp for {len(users)} user(s)...")
+    failures = 0
+
+    for i, cred in enumerate(users):
+        print(f"[{cred.user_id}] syncing...")
+        try:
+            await sync_user(
+                cred.user_id,
+                cred.payload["app_token"],
+                cred.payload["huami_user_id"],
+                cred.payload.get("region", "us"),
+            )
+            mark_synced(cred.user_id, "zepp", datetime.datetime.utcnow().isoformat())
+        except Exception as e:
+            failures += 1
+            mark_failed(cred.user_id, "zepp", str(e))
+            print(f"  FAILED: {e}", file=sys.stderr)
+
+        if i < len(users) - 1:
+            await asyncio.sleep(random.uniform(2, 8))  # jitter — avoid bursting shared runner IP
+
+    if users and failures == len(users):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

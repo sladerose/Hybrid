@@ -1,0 +1,38 @@
+name: Account Connect
+
+on:
+  workflow_dispatch:
+    inputs:
+      login_id:
+        description: "pending_logins row id"
+        required: true
+      source:
+        description: "garmin | zepp"
+        required: true
+
+jobs:
+  connect:
+    name: Connect Account
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run connect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
+        run: |
+          python scripts/connect_account.py \
+            --login-id "${{ github.event.inputs.login_id }}" \
+            --source "${{ github.event.inputs.source }}"

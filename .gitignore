@@ -3,3 +3,8 @@ dist
 dev-dist
 .env.local
 .env
+
+.vercel
+.env*
+__pycache__/
+*.pyc

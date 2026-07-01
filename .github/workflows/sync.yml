@@ -29,10 +29,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
-          GARMIN_REFRESH_TOKEN: ${{ secrets.GARMIN_REFRESH_TOKEN }}
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
         run: python scripts/sync_garmin.py
 
   sync-strava:
@@ -55,12 +52,9 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
           STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
           STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
-          STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: python scripts/sync_strava.py
 
   sync-zepp:
@@ -81,10 +75,7 @@ jobs:
 
       - name: Run Zepp sync
         env:
-          ZEPP_APP_TOKEN: ${{ secrets.ZEPP_APP_TOKEN }}
-          ZEPP_USER_ID: ${{ secrets.ZEPP_USER_ID }}
-          ZEPP_REGION: ${{ secrets.ZEPP_REGION }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
         run: python scripts/sync_zepp.py
