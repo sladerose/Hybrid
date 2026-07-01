@@ -86,7 +86,12 @@ def connect_zepp(email: str, password: str) -> dict:
     huami_user_id = token_info.get("user_id")
 
     if not app_token:
-        raise RuntimeError("Zepp login failed — check email/password")
+        raise RuntimeError(
+            "Zepp login failed. Check your email/password, and make sure you signed up "
+            "with a Zepp/Huami account (email or phone + password) rather than through "
+            "'Sign in with Google/Apple' in the Zepp Life app — social-login accounts "
+            "have no password we can use here."
+        )
 
     return {"app_token": app_token, "huami_user_id": huami_user_id, "region": "us"}
 
@@ -94,8 +99,16 @@ def connect_zepp(email: str, password: str) -> dict:
 def connect_garmin(email: str, password: str) -> dict:
     from garminconnect import Garmin
 
-    client = Garmin(email=email, password=password)
-    mfa_status, _ = client.login()
+    try:
+        client = Garmin(email=email, password=password)
+        mfa_status, _ = client.login()
+    except Exception as e:
+        raise RuntimeError(
+            "Garmin login failed. Check your password, and make sure you're using your "
+            "connect.garmin.com email + password login — not 'Sign in with Google/Facebook'. "
+            "Social-login Garmin accounts have no password we can use here."
+        ) from e
+
     if mfa_status == "needs_mfa":
         raise RuntimeError(
             "This Garmin account has multi-factor authentication enabled — "

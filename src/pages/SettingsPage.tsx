@@ -26,6 +26,15 @@ const EMPTY_ENTRY: StatusEntry = { status: 'not_connected', last_synced_at: null
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 60000
 
+const PASSWORD_MODAL_HELP: Record<PasswordSource, string> = {
+  garmin:
+    "Use your connect.garmin.com email + password login — not \"Sign in with Google/Facebook.\" " +
+    'Accounts created via social login have no password we can use here.',
+  zepp:
+    'Use your Zepp/Huami account email or phone + password — not "Sign in with Google/Apple" ' +
+    'in the Zepp Life app. Social-login accounts have no password we can use here.',
+}
+
 const STRAVA_BANNER: Record<string, string> = {
   connected: 'Strava connected.',
   denied: 'Strava connection was declined.',
@@ -207,9 +216,10 @@ export default function SettingsPage() {
       {connectingSource && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
           <div className="w-full max-w-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 capitalize">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1.5 capitalize">
               Connect {connectingSource}
             </h2>
+            <p className="text-xs text-gray-500 mb-4">{PASSWORD_MODAL_HELP[connectingSource]}</p>
             <form onSubmit={handleModalSubmit} className="space-y-3">
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1.5">Email</label>
