@@ -11,6 +11,7 @@ interface StatusEntry {
   status: ConnectionStatusValue
   last_synced_at: string | null
   last_error: string | null
+  last_backfill_requested_at: string | null
 }
 
 type StatusMap = Record<Source, StatusEntry>
@@ -21,7 +22,12 @@ const SOURCES: { key: Source; label: string }[] = [
   { key: 'zepp', label: 'Zepp' },
 ]
 
-const EMPTY_ENTRY: StatusEntry = { status: 'not_connected', last_synced_at: null, last_error: null }
+const EMPTY_ENTRY: StatusEntry = {
+  status: 'not_connected',
+  last_synced_at: null,
+  last_error: null,
+  last_backfill_requested_at: null,
+}
 
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 60000
@@ -57,6 +63,8 @@ export default function SettingsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [modalError, setModalError] = useState<string | null>(null)
   const [initInFlight, setInitInFlight] = useState<Source | null>(null)
+  const [resyncingSource, setResyncingSource] = useState<Source | null>(null)
+  const [resyncError, setResyncError] = useState<string | null>(null)
 
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -64,7 +72,7 @@ export default function SettingsPage() {
     if (!user) return
     const { data } = await supabase
       .from('connection_status')
-      .select('source, status, last_synced_at, last_error')
+      .select('source, status, last_synced_at, last_error, last_backfill_requested_at')
       .eq('user_id', user.id)
 
     const next: StatusMap = { garmin: EMPTY_ENTRY, strava: EMPTY_ENTRY, zepp: EMPTY_ENTRY }
@@ -73,6 +81,7 @@ export default function SettingsPage() {
         status: row.status as ConnectionStatusValue,
         last_synced_at: row.last_synced_at,
         last_error: row.last_error,
+        last_backfill_requested_at: row.last_backfill_requested_at,
       }
     }
     setStatuses(next)
@@ -168,6 +177,28 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleResync(source: Source) {
+    setResyncingSource(source)
+    setResyncError(null)
+    try {
+      const resp = await fetch('/api/backfill-init', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ source }),
+      })
+      const data = await resp.json()
+      if (!resp.ok) throw new Error(data.error ?? 'Failed to start resync')
+      await fetchStatuses()
+    } catch (e) {
+      setResyncError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setResyncingSource(null)
+    }
+  }
+
   async function handleDisconnect(source: Source) {
     try {
       await fetch('/api/disconnect', {
@@ -194,6 +225,8 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {resyncError && <p className="text-xs text-red-400 mb-3">{resyncError}</p>}
+
       {loading ? (
         <p className="text-sm text-gray-400">Loading...</p>
       ) : (
@@ -205,9 +238,12 @@ export default function SettingsPage() {
               status={statuses[key].status}
               lastSyncedAt={statuses[key].last_synced_at}
               lastError={statuses[key].last_error}
+              lastBackfillRequestedAt={statuses[key].last_backfill_requested_at}
               connecting={initInFlight === key}
+              resyncing={resyncingSource === key}
               onConnect={() => handleConnect(key)}
               onDisconnect={() => handleDisconnect(key)}
+              onResync={() => handleResync(key)}
             />
           ))}
         </div>

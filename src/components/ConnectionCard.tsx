@@ -1,13 +1,24 @@
 export type ConnectionStatusValue = 'not_connected' | 'pending' | 'connected' | 'needs_reauth'
 
+const BACKFILL_COOLDOWN_HOURS = 24
+
 interface ConnectionCardProps {
   label: string
   status: ConnectionStatusValue
   lastSyncedAt: string | null
   lastError: string | null
+  lastBackfillRequestedAt: string | null
   connecting: boolean
+  resyncing: boolean
   onConnect: () => void
   onDisconnect: () => void
+  onResync: () => void
+}
+
+function cooldownHoursLeft(lastBackfillRequestedAt: string | null): number {
+  if (!lastBackfillRequestedAt) return 0
+  const hoursSince = (Date.now() - new Date(lastBackfillRequestedAt).getTime()) / 3_600_000
+  return Math.max(0, Math.ceil(BACKFILL_COOLDOWN_HOURS - hoursSince))
 }
 
 const STATUS_STYLES: Record<ConnectionStatusValue, { badge: string; text: string }> = {
@@ -22,12 +33,16 @@ export default function ConnectionCard({
   status,
   lastSyncedAt,
   lastError,
+  lastBackfillRequestedAt,
   connecting,
+  resyncing,
   onConnect,
   onDisconnect,
+  onResync,
 }: ConnectionCardProps) {
   const style = STATUS_STYLES[status]
   const isConnectedOrStale = status === 'connected' || status === 'needs_reauth'
+  const hoursLeft = cooldownHoursLeft(lastBackfillRequestedAt)
 
   return (
     <div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 flex items-center justify-between gap-4">
@@ -54,6 +69,16 @@ export default function ConnectionCard({
                 className="text-xs text-blue-500 hover:text-blue-400 disabled:opacity-50 cursor-pointer"
               >
                 Reconnect
+              </button>
+            )}
+            {status === 'connected' && (
+              <button
+                onClick={onResync}
+                disabled={resyncing || hoursLeft > 0}
+                title={hoursLeft > 0 ? `Available again in about ${hoursLeft}h` : 'Re-pull the last 90 days'}
+                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50 cursor-pointer"
+              >
+                {resyncing ? 'Resyncing...' : hoursLeft > 0 ? `Resync (${hoursLeft}h)` : 'Resync'}
               </button>
             )}
             <button
