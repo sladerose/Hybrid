@@ -7,7 +7,13 @@ const VALID_SOURCES = ['garmin', 'strava', 'zepp']
 // POST /api/disconnect { source } — deletes the credential row and resets
 // connection_status. Not just a status flip: "delete my data" needs a real
 // path for an eventual open-core/public product.
-export default async function handler(request: Request): Promise<Response> {
+export default {
+  async fetch(request: Request): Promise<Response> {
+    return handleDisconnect(request)
+  },
+}
+
+async function handleDisconnect(request: Request): Promise<Response> {
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
   }

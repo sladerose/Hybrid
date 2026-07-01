@@ -12,7 +12,13 @@ const PENDING_COOLDOWN_SECONDS = 60
 // row and triggers a GitHub Actions job to do the real work, because a live
 // Garmin/Zepp login is slow, flaky, and depends on heavy libraries that
 // don't belong in a public-facing serverless function (see plan doc).
-export default async function handler(request: Request): Promise<Response> {
+export default {
+  async fetch(request: Request): Promise<Response> {
+    return handleConnectInit(request)
+  },
+}
+
+async function handleConnectInit(request: Request): Promise<Response> {
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
   }

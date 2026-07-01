@@ -7,7 +7,13 @@ export const config = { runtime: 'nodejs' }
 // (or denies) access. No password involved, low risk, stays entirely in
 // Vercel (unlike the Garmin/Zepp password handshake, which round-trips
 // through GitHub Actions — see connect-init.ts).
-export default async function handler(request: Request): Promise<Response> {
+export default {
+  async fetch(request: Request): Promise<Response> {
+    return handleCallback(request)
+  },
+}
+
+async function handleCallback(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
