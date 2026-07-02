@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'slade.fit',
-        short_name: 'slade.fit',
+        name: 'Hybrid',
+        short_name: 'Hybrid',
         description: 'Personal fitness tracking dashboard',
         theme_color: '#030712',
         background_color: '#030712',

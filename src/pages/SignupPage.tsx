@@ -63,7 +63,7 @@ export default function SignupPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">slade.fit</h1>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Hybrid</h1>
           <p className="text-sm text-gray-500 mt-1">Create your account</p>
         </div>
 
