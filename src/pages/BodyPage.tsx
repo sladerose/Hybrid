@@ -95,6 +95,9 @@ function KpiCard({
 function WeightTrendChart({ data }: { data: BodyRow[] }) {
   const { TIP, GRID, TICK } = useChartTheme()
   const weights = data.map(r => n(r.weight_kg))
+  const allWeights = weights.filter((v): v is number => v != null)
+  if (!allWeights.length) return null
+
   const avgs = rolling7(weights)
 
   const chartData = data.map((r, i) => ({
@@ -103,7 +106,6 @@ function WeightTrendChart({ data }: { data: BodyRow[] }) {
     avg7: avgs[i] != null ? Math.round(avgs[i]! * 100) / 100 : null,
   }))
 
-  const allWeights = weights.filter((v): v is number => v != null)
   const lo = Math.floor(Math.min(...allWeights) - 0.5)
   const hi = Math.ceil(Math.max(...allWeights) + 0.5)
 
