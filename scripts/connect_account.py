@@ -54,14 +54,44 @@ def set_status(user_id: str, source: str, status: str, last_error: str | None = 
     supabase.table("connection_status").upsert(row, on_conflict="user_id,source").execute()
 
 
-def store_credentials(user_id: str, source: str, payload: dict) -> None:
+def store_credentials(user_id: str, source: str, payload: dict, external_account_id: str | None) -> None:
     supabase.table("user_credentials").upsert(
-        {"user_id": user_id, "source": source, "encrypted_payload": encrypt(json.dumps(payload))},
+        {
+            "user_id": user_id,
+            "source": source,
+            "encrypted_payload": encrypt(json.dumps(payload)),
+            "external_account_id": external_account_id,
+        },
         on_conflict="user_id,source",
     ).execute()
 
 
-def connect_zepp(email: str, password: str) -> dict:
+def check_not_linked_elsewhere(user_id: str, source: str, external_account_id: str | None) -> None:
+    """Refuse the connect if this external account is already linked to a
+    DIFFERENT Supabase user. Without this, a second user connecting the same
+    real Garmin/Strava/Zepp account silently reassigns (bare-id-PK tables) or
+    duplicates (date-keyed tables) the first user's real data onto themself —
+    see the 2 Jul 2026 incident note in CLAUDE.md.
+    """
+    if not external_account_id:
+        return
+    existing = (
+        supabase.table("user_credentials")
+        .select("user_id")
+        .eq("source", source)
+        .eq("external_account_id", external_account_id)
+        .neq("user_id", user_id)
+        .execute()
+    )
+    if existing.data:
+        raise RuntimeError(
+            f"This {source} account is already connected to a different "
+            "user on this app. Each Garmin/Strava/Zepp account can only be "
+            "linked to one user at a time."
+        )
+
+
+def connect_zepp(email: str, password: str) -> tuple[dict, str | None]:
     """Port of mcps/zepp/get_token.py's Huami login."""
     password_md5 = hashlib.md5(password.encode()).hexdigest()
     device_id = str(uuid.uuid4())
@@ -95,10 +125,11 @@ def connect_zepp(email: str, password: str) -> dict:
             "have no password we can use here."
         )
 
-    return {"app_token": app_token, "huami_user_id": huami_user_id, "region": "us"}
+    payload = {"app_token": app_token, "huami_user_id": huami_user_id, "region": "us"}
+    return payload, (str(huami_user_id) if huami_user_id is not None else None)
 
 
-def connect_garmin(email: str, password: str) -> dict:
+def connect_garmin(email: str, password: str) -> tuple[dict, str | None]:
     from garminconnect import Garmin
 
     try:
@@ -116,7 +147,7 @@ def connect_garmin(email: str, password: str) -> dict:
             "This Garmin account has multi-factor authentication enabled — "
             "not yet supported. Disable MFA on the Garmin account to connect."
         )
-    return json.loads(client.client.dumps())
+    return json.loads(client.client.dumps()), client.display_name
 
 
 def run_initial_backfill(user_id: str, payload: dict) -> None:
@@ -150,9 +181,13 @@ def main() -> None:
         creds = json.loads(decrypt(pending["encrypted_credentials"]))
         email, password = creds["email"], creds["password"]
 
-        payload = connect_garmin(email, password) if source == "garmin" else connect_zepp(email, password)
+        payload, external_account_id = (
+            connect_garmin(email, password) if source == "garmin" else connect_zepp(email, password)
+        )
 
-        store_credentials(user_id, source, payload)
+        check_not_linked_elsewhere(user_id, source, external_account_id)
+
+        store_credentials(user_id, source, payload, external_account_id)
         set_status(user_id, source, "connected")
         print(f"Connected {source} for user {user_id}")
 

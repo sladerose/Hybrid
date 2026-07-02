@@ -51,14 +51,37 @@ async function handleCallback(request: Request): Promise<Response> {
     })
     if (!resp.ok) throw new Error(`Strava token exchange failed: ${resp.status}`)
 
-    const data = (await resp.json()) as { refresh_token?: string }
+    const data = (await resp.json()) as { refresh_token?: string; athlete?: { id?: number } }
     if (!data.refresh_token) throw new Error('No refresh_token in Strava response')
+
+    const externalAccountId = data.athlete?.id != null ? String(data.athlete.id) : null
+
+    // Refuse if this Strava athlete is already linked to a DIFFERENT user —
+    // otherwise the next sync silently reassigns/duplicates their real data
+    // onto this account. See the 2 Jul 2026 incident note in CLAUDE.md.
+    if (externalAccountId) {
+      const { data: existing } = await admin
+        .from('user_credentials')
+        .select('user_id')
+        .eq('source', 'strava')
+        .eq('external_account_id', externalAccountId)
+        .neq('user_id', userId)
+      if (existing && existing.length > 0) {
+        throw new Error(
+          'This Strava account is already connected to a different user on this app. ' +
+            'Each Strava account can only be linked to one user at a time.',
+        )
+      }
+    }
 
     const encryptedPayload = encrypt(JSON.stringify({ refresh_token: data.refresh_token }))
 
     await admin
       .from('user_credentials')
-      .upsert({ user_id: userId, source: 'strava', encrypted_payload: encryptedPayload }, { onConflict: 'user_id,source' })
+      .upsert(
+        { user_id: userId, source: 'strava', encrypted_payload: encryptedPayload, external_account_id: externalAccountId },
+        { onConflict: 'user_id,source' },
+      )
 
     await admin
       .from('connection_status')
