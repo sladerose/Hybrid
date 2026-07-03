@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Sync Zepp Life body measurements to Supabase, for every user with a
-stored Zepp credential (see credentials.py). Each user's CloudSessionAdapter
-is constructed directly from their decrypted app_token/huami_user_id/region —
-no more global keyring shim, since there's no longer a single shared account.
+"""Sync Zepp Life data to Supabase, for every user with a stored Zepp
+credential (see credentials.py). Each user's CloudSessionAdapter is
+constructed directly from their decrypted app_token/huami_user_id/region —
+no global keyring shim, since there's no longer a single shared account.
+
+Covers three data categories from the same Huami account: body composition
+(Xiaomi scale), daily wellness (steps/sleep/resting HR from an Amazfit
+watch), and workouts. Row-shape logic for each lives in zepp_lib.py.
 
 GitHub Secrets required:
   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, CREDENTIAL_ENCRYPTION_KEY
@@ -20,6 +24,7 @@ from supabase import create_client
 
 sys.path.insert(0, os.path.dirname(__file__))
 from credentials import get_active_users, mark_failed, mark_synced  # noqa: E402
+import zepp_lib  # noqa: E402
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -44,14 +49,31 @@ _data_dir.mkdir(parents=True, exist_ok=True)
     "default_lookback_days": 30,
 }))
 
-from zepp_life_mcp.adapters.cloud_session import CloudSessionAdapter  # noqa: E402
 from zepp_life_mcp.config import load_config  # noqa: E402
-from zepp_life_mcp.services.query_service import QueryService  # noqa: E402
-from zepp_life_mcp.services.sync_service import SyncService  # noqa: E402
 from zepp_life_mcp.storage import Database  # noqa: E402
 
 _cfg = load_config()
 _db = Database(_cfg.database_path)
+
+DEFAULT_LOOKBACK_DAYS = 90
+
+
+def _since_last(table: str, date_col: str, user_id: str) -> str:
+    """Last recorded date for this table/user, or a 90-day fallback for a
+    brand-new data category (e.g. zepp_daily/zepp_workouts on a connection
+    that previously only synced body composition) — same self-heal
+    convention sync_strava.py uses for a zero-row user."""
+    result = (
+        supabase.table(table)
+        .select(date_col)
+        .eq("user_id", user_id)
+        .order(date_col, desc=True)
+        .limit(1)
+        .execute()
+    )
+    if result.data:
+        return str(result.data[0][date_col])[:10]
+    return (datetime.date.today() - datetime.timedelta(days=DEFAULT_LOOKBACK_DAYS)).isoformat()
 
 
 async def sync_user(
@@ -62,87 +84,28 @@ async def sync_user(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> None:
-    """start_date/end_date override the "since last synced measurement"
-    default — used by backfill_zepp.py to force-refetch an explicit window
-    (e.g. to repair a gap). Safe to re-run over a range that already has
-    data: rows dedup on (user_id, date) via upsert.
+    """start_date/end_date override each table's "since last row" default —
+    used by backfill_zepp.py to force-refetch an explicit window (e.g. to
+    repair a gap). Safe to re-run over a range that already has data: every
+    table upserts on its natural key.
     """
-    adapter = CloudSessionAdapter(app_token=app_token, user_id=huami_user_id, region=region)
-
-    if not await adapter.connect():
-        raise RuntimeError("Cannot connect to Zepp Life API — token may be expired")
-
-    sync_svc = SyncService(adapter, _db)
-    query_svc = QueryService(_db, huami_user_id)
-
-    if start_date is None:
-        result = (
-            supabase.table("zepp_body_composition")
-            .select("measured_at")
-            .eq("user_id", user_id)
-            .order("measured_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if result.data:
-            start_date = result.data[0]["measured_at"][:10]
-        else:
-            start_date = (datetime.date.today() - datetime.timedelta(days=90)).isoformat()
+    sync_svc, query_svc = await zepp_lib.connect(app_token, huami_user_id, region, _db)
     end_date = end_date or datetime.date.today().isoformat()
 
-    print(f"  Syncing {start_date} to {end_date}...")
-    await sync_svc.sync_data_type("body_measurements", start_date=start_date, end_date=end_date)
+    body_start = start_date or _since_last("zepp_body_composition", "measured_at", user_id)
+    print(f"  body composition: {body_start} to {end_date}...")
+    n = await zepp_lib.sync_body_comp(supabase, sync_svc, query_svc, user_id, body_start, end_date)
+    print(f"  zepp_body_composition OK ({n} rows upserted)")
 
-    measurements = query_svc.get_body_measurements(start_date, end_date)
-    print(f"  Got {len(measurements)} measurements from local DB")
-    if not measurements:
-        return
+    daily_start = start_date or _since_last("zepp_daily", "date", user_id)
+    print(f"  daily wellness: {daily_start} to {end_date}...")
+    n = await zepp_lib.sync_daily(supabase, sync_svc, query_svc, user_id, daily_start, end_date)
+    print(f"  zepp_daily OK ({n} rows upserted)")
 
-    existing = (
-        supabase.table("zepp_body_composition")
-        .select("date")
-        .eq("user_id", user_id)
-        .gte("date", start_date)
-        .execute()
-    )
-    existing_dates = {r["date"] for r in (existing.data or [])}
-
-    rows = []
-    for m in measurements:
-        measured_at = m.get("measured_at") or m.get("timestamp") or m.get("date")
-        if not measured_at or str(measured_at)[:10] in existing_dates:
-            continue
-        rows.append({
-            "user_id": user_id,
-            "date": str(measured_at)[:10],
-            "measured_at": measured_at,
-            "weight_kg": m.get("weight_kg"),
-            "bmi": m.get("bmi"),
-            "body_fat_percent": m.get("body_fat_pct") or m.get("body_fat_percent"),
-            "muscle_mass_kg": m.get("muscle_mass_kg"),
-            "bone_mass_kg": m.get("bone_mass_kg"),
-            "hydration_percent": m.get("water_pct") or m.get("hydration_pct") or m.get("hydration_percent"),
-            "visceral_fat": m.get("visceral_fat") or m.get("visceral_fat_level"),
-            "visceral_fat_rating": m.get("visceral_fat_rating"),
-            "metabolic_age": m.get("metabolic_age"),
-            "physique_rating": m.get("physique_rating"),
-            "basal_metabolic_rate": m.get("basal_metabolic_rate") or m.get("bmr"),
-            "synced_at": datetime.datetime.utcnow().isoformat(),
-        })
-
-    if not rows:
-        print("  no new measurements")
-        return
-
-    # Multiple measurements per day possible — keep latest per date before upsert
-    rows_by_date: dict = {}
-    for row in rows:
-        d = row["date"]
-        if d not in rows_by_date or (row["measured_at"] or "") > (rows_by_date[d]["measured_at"] or ""):
-            rows_by_date[d] = row
-    rows = list(rows_by_date.values())
-    supabase.table("zepp_body_composition").upsert(rows, on_conflict="user_id,date").execute()
-    print(f"  zepp_body_composition OK ({len(rows)} rows upserted)")
+    workouts_start = start_date or _since_last("zepp_workouts", "start_date", user_id)
+    print(f"  workouts: {workouts_start} to {end_date}...")
+    n = await zepp_lib.sync_workouts(supabase, sync_svc, query_svc, user_id, workouts_start, end_date)
+    print(f"  zepp_workouts OK ({n} rows upserted)")
 
 
 async def main() -> None:
