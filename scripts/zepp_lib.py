@@ -35,25 +35,27 @@ async def connect(app_token: str, huami_user_id: str, region: str, db):
 
 
 async def sync_body_comp(supabase, sync_svc, query_svc, user_id: str, start_date: str, end_date: str) -> int:
-    """Xiaomi Mi Body Composition Scale readings, via the same Huami account."""
+    """Xiaomi Mi Body Composition Scale readings, via the same Huami account.
+
+    Does NOT skip dates that already have a row — the table upserts on
+    (user_id, date) via ON CONFLICT, so re-fetching an existing date safely
+    overwrites it with fresh values. An earlier version pre-filtered against
+    already-synced dates before building rows; that silently defeated any
+    backfill meant to *repair* existing rows (e.g. after a field-mapping fix
+    upstream), since a date once synced could never be corrected again short
+    of manually deleting it first — confirmed live: 4 days of real data sat
+    permanently NULL on visceral_fat/basal_metabolic_rate after upstream
+    renamed those fields, because every backfill re-run skipped them.
+    """
     await sync_svc.sync_data_type("body_measurements", start_date=start_date, end_date=end_date)
     measurements = query_svc.get_body_measurements(start_date, end_date)
     if not measurements:
         return 0
 
-    existing = (
-        supabase.table("zepp_body_composition")
-        .select("date")
-        .eq("user_id", user_id)
-        .gte("date", start_date)
-        .execute()
-    )
-    existing_dates = {r["date"] for r in (existing.data or [])}
-
     rows = []
     for m in measurements:
         ts = m.get("timestamp")
-        if not ts or str(ts)[:10] in existing_dates:
+        if not ts:
             continue
         rows.append({
             "user_id": user_id,
