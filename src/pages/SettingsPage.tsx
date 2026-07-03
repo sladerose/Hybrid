@@ -4,8 +4,18 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import ConnectionCard, { type ConnectionStatusValue } from '../components/ConnectionCard'
 
-type Source = 'garmin' | 'strava' | 'zepp'
-type PasswordSource = 'garmin' | 'zepp'
+// Source is a plain string, not a literal union, because the list of
+// connectable sources is fetched from the data_sources table (see
+// database/migrations/20260706_create_data_sources_registry.sql) instead of
+// being hardcoded — a new connector shows up here with zero frontend
+// redeploy once it exists as a row in that table.
+type Source = string
+
+interface DataSource {
+  key: Source
+  display_name: string
+  auth_method: 'oauth' | 'password'
+}
 
 interface StatusEntry {
   status: ConnectionStatusValue
@@ -15,12 +25,6 @@ interface StatusEntry {
 }
 
 type StatusMap = Record<Source, StatusEntry>
-
-const SOURCES: { key: Source; label: string }[] = [
-  { key: 'garmin', label: 'Garmin' },
-  { key: 'strava', label: 'Strava' },
-  { key: 'zepp', label: 'Zepp' },
-]
 
 const EMPTY_ENTRY: StatusEntry = {
   status: 'not_connected',
@@ -32,7 +36,10 @@ const EMPTY_ENTRY: StatusEntry = {
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 60000
 
-const PASSWORD_MODAL_HELP: Record<PasswordSource, string> = {
+// Tailored copy for the sources we know about today; any future
+// password-auth source falls back to a generic message rather than crashing
+// on a missing map entry.
+const PASSWORD_MODAL_HELP: Record<string, string> = {
   garmin:
     "Use your connect.garmin.com email + password login — not \"Sign in with Google/Facebook.\" " +
     'Accounts created via social login have no password we can use here.',
@@ -40,6 +47,9 @@ const PASSWORD_MODAL_HELP: Record<PasswordSource, string> = {
     'Use your Zepp/Huami account email or phone + password — not "Sign in with Google/Apple" ' +
     'in the Zepp Life app. Social-login accounts have no password we can use here.',
 }
+const DEFAULT_PASSWORD_MODAL_HELP =
+  'Use your account email + password login — not a social-login button. ' +
+  'Social-login accounts have no password we can use here.'
 
 const STRAVA_BANNER: Record<string, string> = {
   connected: 'Strava connected.',
@@ -51,13 +61,10 @@ const STRAVA_BANNER: Record<string, string> = {
 export default function SettingsPage() {
   const { user, session } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [statuses, setStatuses] = useState<StatusMap>({
-    garmin: EMPTY_ENTRY,
-    strava: EMPTY_ENTRY,
-    zepp: EMPTY_ENTRY,
-  })
+  const [sources, setSources] = useState<DataSource[]>([])
+  const [statuses, setStatuses] = useState<StatusMap>({})
   const [loading, setLoading] = useState(true)
-  const [connectingSource, setConnectingSource] = useState<PasswordSource | null>(null)
+  const [connectingSource, setConnectingSource] = useState<Source | null>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -75,7 +82,8 @@ export default function SettingsPage() {
       .select('source, status, last_synced_at, last_error, last_backfill_requested_at')
       .eq('user_id', user.id)
 
-    const next: StatusMap = { garmin: EMPTY_ENTRY, strava: EMPTY_ENTRY, zepp: EMPTY_ENTRY }
+    const next: StatusMap = {}
+    for (const s of sources) next[s.key] = EMPTY_ENTRY
     for (const row of data ?? []) {
       next[row.source as Source] = {
         status: row.status as ConnectionStatusValue,
@@ -86,11 +94,22 @@ export default function SettingsPage() {
     }
     setStatuses(next)
     return next
+  }, [user, sources])
+
+  // Connector list comes from data_sources (see 20260706_create_data_sources_registry.sql)
+  // rather than a hardcoded array — adding a connector needs zero frontend redeploy.
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('data_sources')
+      .select('key, display_name, auth_method')
+      .then(({ data }) => setSources(data ?? []))
   }, [user])
 
   useEffect(() => {
+    if (!sources.length) return
     fetchStatuses().finally(() => setLoading(false))
-  }, [fetchStatuses])
+  }, [sources, fetchStatuses])
 
   useEffect(() => {
     const bannerKey = searchParams.get('strava')
@@ -123,6 +142,10 @@ export default function SettingsPage() {
   }, [])
 
   async function handleConnect(source: Source) {
+    // Only Strava has an OAuth backend today (app/api/strava-init.ts +
+    // strava-callback.ts) — a future oauth-auth_method source would need its
+    // own callback route before this branch could generalize past the
+    // literal check.
     if (source === 'strava') {
       setInitInFlight('strava')
       try {
@@ -231,21 +254,24 @@ export default function SettingsPage() {
         <p className="text-sm text-gray-400">Loading...</p>
       ) : (
         <div className="space-y-3">
-          {SOURCES.map(({ key, label }) => (
-            <ConnectionCard
-              key={key}
-              label={label}
-              status={statuses[key].status}
-              lastSyncedAt={statuses[key].last_synced_at}
-              lastError={statuses[key].last_error}
-              lastBackfillRequestedAt={statuses[key].last_backfill_requested_at}
-              connecting={initInFlight === key}
-              resyncing={resyncingSource === key}
-              onConnect={() => handleConnect(key)}
-              onDisconnect={() => handleDisconnect(key)}
-              onResync={() => handleResync(key)}
-            />
-          ))}
+          {sources.map(({ key, display_name }) => {
+            const entry = statuses[key] ?? EMPTY_ENTRY
+            return (
+              <ConnectionCard
+                key={key}
+                label={display_name}
+                status={entry.status}
+                lastSyncedAt={entry.last_synced_at}
+                lastError={entry.last_error}
+                lastBackfillRequestedAt={entry.last_backfill_requested_at}
+                connecting={initInFlight === key}
+                resyncing={resyncingSource === key}
+                onConnect={() => handleConnect(key)}
+                onDisconnect={() => handleDisconnect(key)}
+                onResync={() => handleResync(key)}
+              />
+            )
+          })}
         </div>
       )}
 
@@ -255,7 +281,9 @@ export default function SettingsPage() {
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1.5 capitalize">
               Connect {connectingSource}
             </h2>
-            <p className="text-xs text-gray-500 mb-4">{PASSWORD_MODAL_HELP[connectingSource]}</p>
+            <p className="text-xs text-gray-500 mb-4">
+              {PASSWORD_MODAL_HELP[connectingSource] ?? DEFAULT_PASSWORD_MODAL_HELP}
+            </p>
             <form onSubmit={handleModalSubmit} className="space-y-3">
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1.5">Email</label>

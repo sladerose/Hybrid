@@ -9,6 +9,10 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useChartTheme } from '../lib/chartTheme'
+import { Card } from '../components/shared/Card'
+import { ChartHeader } from '../components/shared/ChartHeader'
+import { LoadingSkeleton } from '../components/shared/LoadingSkeleton'
+import { DataGate } from '../components/shared/DataGate'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -103,23 +107,6 @@ function avg(values: (number | null)[]): number | null {
 }
 
 // ── UI atoms ──────────────────────────────────────────────────────────────────
-
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 ${className}`}>
-      {children}
-    </div>
-  )
-}
-
-function ChartHeader({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <div className="mb-3">
-      <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">{title}</p>
-      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
-    </div>
-  )
-}
 
 function StatRow({ label, value, unit, accent }: { label: string; value: string; unit?: string; accent: string }) {
   return (
@@ -808,11 +795,7 @@ export default function RecoveryPage() {
   }).length
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-5 h-5 rounded-full border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 animate-spin" />
-      </div>
-    )
+    return <LoadingSkeleton />
   }
 
   return (
@@ -831,14 +814,18 @@ export default function RecoveryPage() {
             title="Battery & Sleep"
             sub="Body battery · sleep hours — 90 days · faded = 7d avg"
           />
-          <BatterySleepChart data={trend} />
+          <DataGate rows={trend}>
+            <BatterySleepChart data={trend} />
+          </DataGate>
         </Card>
         <Card>
           <ChartHeader
             title="Stress & Resting HR"
             sub="Stress · RHR — 90 days · faded = 7d avg"
           />
-          <StressRHRChart data={trend} />
+          <DataGate rows={trend}>
+            <StressRHRChart data={trend} />
+          </DataGate>
         </Card>
       </div>
 
@@ -879,7 +866,9 @@ export default function RecoveryPage() {
             title="Sleep Stages"
             sub="Last 30 nights · Deep · REM · Light · Awake in hours"
           />
-          <SleepStagesChart data={sleep} />
+          <DataGate rows={sleep}>
+            <SleepStagesChart data={sleep} />
+          </DataGate>
         </Card>
         <Card className="lg:col-span-4">
           <ChartHeader title="30-Night Average" />
@@ -972,7 +961,9 @@ export default function RecoveryPage() {
           title="Weekly Stress Trend"
           sub="39 weeks · reference at 40 = moderate threshold"
         />
-        <WeeklyStressChart data={stress} />
+        <DataGate rows={stress}>
+          <WeeklyStressChart data={stress} />
+        </DataGate>
       </Card>
     </div>
   )

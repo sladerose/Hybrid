@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
@@ -7,10 +8,14 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useChartTheme } from '../lib/chartTheme'
+import { useCapabilities } from '../hooks/useCapabilities'
 import {
   bodyBatteryColor, rhrColor, sleepColor, stressColor,
   vigorousMinsColor, vigorousMinsBg,
 } from '../lib/rag'
+import { Card } from '../components/shared/Card'
+import { MetricCard } from '../components/shared/MetricCard'
+import { LoadingSkeleton } from '../components/shared/LoadingSkeleton'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,106 +92,12 @@ function delta(v: string | number | null, higherIsBetter = true): { text: string
 }
 
 // ── UI atoms ─────────────────────────────────────────────────────────────────
+// Card/MetricCard now come from ../components/shared — SignalCard and
+// WeekCard were near-identical wrappers around the same shape, consolidated
+// into shared MetricCard (see app/src/components/shared/MetricCard.tsx).
 
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 ${className}`}>
-      {children}
-    </div>
-  )
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-2">
-      {children}
-    </p>
-  )
-}
-
-function BigNum({
-  value,
-  unit,
-  accent,
-}: {
-  value: string | number | null | undefined
-  unit?: string
-  accent: string
-}) {
-  return (
-    <p className={`text-2xl font-semibold ${accent}`}>
-      {value ?? '--'}
-      {unit && <span className="text-xs font-normal text-gray-500 ml-1">{unit}</span>}
-    </p>
-  )
-}
-
-// ── Signal card ───────────────────────────────────────────────────────────────
-
-function SignalCard({
-  label,
-  value,
-  unit,
-  accent,
-  sub,
-  deltaVal,
-}: {
-  label: string
-  value: string | number | null | undefined
-  unit?: string
-  accent: string
-  sub?: string
-  deltaVal?: ReturnType<typeof delta>
-}) {
-  return (
-    <Card>
-      <Label>{label}</Label>
-      <BigNum value={value} unit={unit} accent={accent} />
-      <div className="mt-1 space-y-0.5">
-        {deltaVal && (
-          <p className={`text-xs font-medium ${deltaVal.color}`}>{deltaVal.text} vs 7d avg</p>
-        )}
-        {sub && <p className="text-xs text-gray-500 leading-tight">{sub}</p>}
-      </div>
-    </Card>
-  )
-}
-
-// ── Week metric ───────────────────────────────────────────────────────────────
-
-function WeekCard({
-  label,
-  value,
-  unit,
-  accent,
-  sub,
-  progress,
-  barColor,
-}: {
-  label: string
-  value: string | number | null | undefined
-  unit?: string
-  accent: string
-  sub?: string
-  progress?: number
-  barColor?: string
-}) {
-  return (
-    <Card>
-      <Label>{label}</Label>
-      <BigNum value={value} unit={unit} accent={accent} />
-      {progress !== undefined && (
-        <div className="mt-2 h-1 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all ${barColor ?? 'bg-blue-500'}`}
-            style={{ width: `${Math.min(100, progress)}%` }}
-          />
-        </div>
-      )}
-      {sub && <p className="text-xs text-gray-500 mt-1 leading-tight">{sub}</p>}
-    </Card>
-  )
-}
+const SignalCard = MetricCard
+const WeekCard = MetricCard
 
 // ── Readiness Radar ───────────────────────────────────────────────────────────
 
@@ -592,6 +503,7 @@ function WeeklyCoach({
 
 export default function DashboardPage() {
   const { user } = useAuth()
+  const { isConnected, loading: capsLoading } = useCapabilities()
   const [readiness, setReadiness] = useState<ReadinessRow | null>(null)
   const [week, setWeek] = useState<WeekRow | null>(null)
   const [heatmap, setHeatmap] = useState<HeatmapRow[]>([])
@@ -653,13 +565,7 @@ export default function DashboardPage() {
     })
   }, [user])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-5 h-5 rounded-full border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 animate-spin" />
-      </div>
-    )
-  }
+  if (loading) return <LoadingSkeleton />
 
   if (error) {
     return (
@@ -693,103 +599,128 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Readiness Radar */}
-      <ReadinessRadar readiness={readiness} week={week} />
+      {/* Readiness scoring is computed off Garmin-only signals (Body Battery,
+          RHR/stress percentiles) — no Zepp/Amazfit equivalent exists, so this
+          whole block is gated on a Garmin connection rather than showing a
+          wall of '--' placeholders to a Zepp-only user. */}
+      {!capsLoading && isConnected('garmin') && (
+        <>
+          {/* Readiness Radar */}
+          <ReadinessRadar readiness={readiness} week={week} />
 
-      {/* Signal cards */}
-      <div>
-        <p className="text-[10px] font-medium text-gray-600 uppercase tracking-widest mb-2">
-          Today
-        </p>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <SignalCard
-            label="Body Battery"
-            value={readiness?.body_battery_highest ?? '--'}
-            accent={bodyBatteryColor(readiness?.body_battery_highest)}
-            sub={`Low ${readiness?.body_battery_current ?? '--'} · peak today`}
-          />
-          <SignalCard
-            label="Sleep"
-            value={fmt(readiness?.sleep_hours)}
-            unit="hrs"
-            accent={sleepColor(n(readiness?.sleep_hours))}
-            sub={
-              readiness?.sleep_deep_percent != null
-                ? `Deep ${fmt(readiness.sleep_deep_percent, 0)}% · REM ${fmt(readiness.sleep_rem_percent, 0)}%`
-                : undefined
-            }
-          />
-          <SignalCard
-            label="Resting HR"
-            value={readiness?.resting_hr ?? '--'}
-            unit="bpm"
-            accent={rhrColor(readiness?.resting_hr)}
-            deltaVal={rhrDelta ?? undefined}
-            sub={`7d avg ${readiness?.last_7_days_avg_resting_hr ?? '--'} bpm`}
-          />
-          <SignalCard
-            label="Stress"
-            value={readiness?.avg_stress ?? '--'}
-            accent={stressColor(readiness?.avg_stress)}
-            sub={
-              readiness?.readiness_score != null
-                ? `Readiness score ${fmt(readiness.readiness_score, 0)}`
-                : undefined
-            }
-          />
-        </div>
-      </div>
+          {/* Signal cards */}
+          <div>
+            <p className="text-[10px] font-medium text-gray-600 uppercase tracking-widest mb-2">
+              Today
+            </p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <SignalCard
+                label="Body Battery"
+                value={readiness?.body_battery_highest ?? '--'}
+                accent={bodyBatteryColor(readiness?.body_battery_highest)}
+                sub={`Low ${readiness?.body_battery_current ?? '--'} · peak today`}
+              />
+              <SignalCard
+                label="Sleep"
+                value={fmt(readiness?.sleep_hours)}
+                unit="hrs"
+                accent={sleepColor(n(readiness?.sleep_hours))}
+                sub={
+                  readiness?.sleep_deep_percent != null
+                    ? `Deep ${fmt(readiness.sleep_deep_percent, 0)}% · REM ${fmt(readiness.sleep_rem_percent, 0)}%`
+                    : undefined
+                }
+              />
+              <SignalCard
+                label="Resting HR"
+                value={readiness?.resting_hr ?? '--'}
+                unit="bpm"
+                accent={rhrColor(readiness?.resting_hr)}
+                deltaVal={rhrDelta ?? undefined}
+                sub={`7d avg ${readiness?.last_7_days_avg_resting_hr ?? '--'} bpm`}
+              />
+              <SignalCard
+                label="Stress"
+                value={readiness?.avg_stress ?? '--'}
+                accent={stressColor(readiness?.avg_stress)}
+                sub={
+                  readiness?.readiness_score != null
+                    ? `Readiness score ${fmt(readiness.readiness_score, 0)}`
+                    : undefined
+                }
+              />
+            </div>
+          </div>
 
-      {/* Week at a glance */}
-      <div>
-        <p className="text-[10px] font-medium text-gray-600 uppercase tracking-widest mb-2">
-          This week
-        </p>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <WeekCard
-            label="Running"
-            value={
-              week?.run_count != null && week.run_km != null
-                ? `${week.run_count} run${week.run_count !== 1 ? 's' : ''}`
-                : week?.run_count ?? '--'
-            }
-            accent="text-blue-400"
-            sub={week?.run_km ? `${fmt(week.run_km, 1)} km total` : undefined}
-          />
-          <WeekCard
-            label="Gym sessions"
-            value={week?.gym_count ?? '--'}
-            accent="text-orange-400"
-            sub={week?.gym_count != null ? `session${week.gym_count !== 1 ? 's' : ''} this week` : undefined}
-          />
-          <WeekCard
-            label="Vigorous mins"
-            value={vigMin}
-            unit="min"
-            accent={vigorousMinsColor(vigMin)}
-            progress={vigProgress}
-            barColor={vigorousMinsBg(vigMin)}
-            sub={`of 150 min target${vigMin >= 150 ? ' ✓' : ''}`}
-          />
-          <WeekCard
-            label="Avg sleep"
-            value={fmt(week?.avg_sleep)}
-            unit="hrs"
-            accent={sleepColor(n(week?.avg_sleep))}
-            sub={
-              week?.sleep_delta
-                ? (() => {
-                    const d = delta(week.sleep_delta, true)
-                    return d ? `${d.text} hrs vs last week` : undefined
-                  })()
-                : undefined
-            }
-          />
-        </div>
-      </div>
+          {/* Week at a glance */}
+          <div>
+            <p className="text-[10px] font-medium text-gray-600 uppercase tracking-widest mb-2">
+              This week
+            </p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <WeekCard
+                label="Running"
+                value={
+                  week?.run_count != null && week.run_km != null
+                    ? `${week.run_count} run${week.run_count !== 1 ? 's' : ''}`
+                    : week?.run_count ?? '--'
+                }
+                accent="text-blue-400"
+                sub={week?.run_km ? `${fmt(week.run_km, 1)} km total` : undefined}
+              />
+              <WeekCard
+                label="Gym sessions"
+                value={week?.gym_count ?? '--'}
+                accent="text-orange-400"
+                sub={week?.gym_count != null ? `session${week.gym_count !== 1 ? 's' : ''} this week` : undefined}
+              />
+              <WeekCard
+                label="Vigorous mins"
+                value={vigMin}
+                unit="min"
+                accent={vigorousMinsColor(vigMin)}
+                progress={vigProgress}
+                barColor={vigorousMinsBg(vigMin)}
+                sub={`of 150 min target${vigMin >= 150 ? ' ✓' : ''}`}
+              />
+              <WeekCard
+                label="Avg sleep"
+                value={fmt(week?.avg_sleep)}
+                unit="hrs"
+                accent={sleepColor(n(week?.avg_sleep))}
+                sub={
+                  week?.sleep_delta
+                    ? (() => {
+                        const d = delta(week.sleep_delta, true)
+                        return d ? `${d.text} hrs vs last week` : undefined
+                      })()
+                    : undefined
+                }
+              />
+            </div>
+          </div>
 
-      {/* Week vs last week */}
-      <WeekComparison week={week} />
+          {/* Week vs last week */}
+          <WeekComparison week={week} />
+        </>
+      )}
+
+      {!capsLoading && !isConnected('garmin') && (
+        <Card>
+          <p className="text-sm text-gray-500">
+            Readiness scoring (Body Battery, stress, RHR baseline) needs a Garmin connection —
+            no equivalent signal exists from a Zepp/Amazfit-only setup.{' '}
+            <Link to="/recovery" className="text-blue-400 hover:underline">
+              See your Recovery trend
+            </Link>{' '}
+            for the signals available from your connected sources, or{' '}
+            <Link to="/settings" className="text-blue-400 hover:underline">
+              connect Garmin in Settings
+            </Link>
+            .
+          </p>
+        </Card>
+      )}
 
       {/* Weekly AI Coach */}
       <WeeklyCoach

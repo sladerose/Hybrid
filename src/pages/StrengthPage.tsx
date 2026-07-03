@@ -9,6 +9,11 @@ import { useAuth } from '../context/AuthContext'
 import { sessionRatingColor } from '../lib/rag'
 import { useChartTheme } from '../lib/chartTheme'
 import { BodyModel3D } from '../components/BodyModel3D'
+import { Card } from '../components/shared/Card'
+import { ChartHeader } from '../components/shared/ChartHeader'
+import { MetricCard as KpiCard } from '../components/shared/MetricCard'
+import { LoadingSkeleton } from '../components/shared/LoadingSkeleton'
+import { DataGate } from '../components/shared/DataGate'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -71,50 +76,6 @@ function n(v: string | number | null | undefined): number | null {
   if (v == null) return null
   const x = Number(v)
   return isNaN(x) ? null : x
-}
-
-// ── UI atoms ──────────────────────────────────────────────────────────────────
-
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 ${className}`}>
-      {children}
-    </div>
-  )
-}
-
-function ChartHeader({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <div className="mb-3">
-      <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">{title}</p>
-      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
-    </div>
-  )
-}
-
-function KpiCard({
-  label,
-  value,
-  unit,
-  accent,
-  sub,
-}: {
-  label: string
-  value: string | null
-  unit?: string
-  accent: string
-  sub?: string
-}) {
-  return (
-    <Card>
-      <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-1">{label}</p>
-      <p className={`text-2xl font-semibold ${accent}`}>
-        {value ?? '--'}
-        {unit && <span className="text-xs font-normal text-gray-500 ml-1">{unit}</span>}
-      </p>
-      {sub && <p className="text-[11px] text-gray-500 dark:text-gray-600 mt-0.5">{sub}</p>}
-    </Card>
-  )
 }
 
 // ── Session Volume Bar ────────────────────────────────────────────────────────
@@ -489,11 +450,7 @@ export default function StrengthPage() {
     : null
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-5 h-5 rounded-full border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 animate-spin" />
-      </div>
-    )
+    return <LoadingSkeleton />
   }
 
   return (
@@ -547,7 +504,9 @@ export default function StrengthPage() {
       {/* Muscle group volume + exercise progression */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MuscleGroupChart data={exercises} />
-        <ExerciseProgressionTable data={exercises} />
+        <DataGate rows={exercises}>
+          <ExerciseProgressionTable data={exercises} />
+        </DataGate>
       </div>
 
       {/* Session log */}
