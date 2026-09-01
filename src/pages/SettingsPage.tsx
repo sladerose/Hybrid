@@ -103,7 +103,17 @@ export default function SettingsPage() {
     supabase
       .from('data_sources')
       .select('key, display_name, auth_method')
-      .then(({ data }) => setSources(data ?? []))
+      .then(({ data }) => {
+        const list = data ?? []
+        setSources(list)
+        // The statuses effect below only calls setLoading(false) once it has
+        // sources to fetch statuses for (`if (!sources.length) return`) — it
+        // can't otherwise tell "not fetched yet" apart from "fetched and
+        // genuinely empty", since both are `sources.length === 0`. Without
+        // this, an empty data_sources result left the page stuck on
+        // "Loading..." forever.
+        if (!list.length) setLoading(false)
+      })
   }, [user])
 
   useEffect(() => {
