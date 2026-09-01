@@ -12,6 +12,32 @@ const PENDING_COOLDOWN_SECONDS = 60
 // row and triggers a GitHub Actions job to do the real work, because a live
 // Garmin/Zepp login is slow, flaky, and depends on heavy libraries that
 // don't belong in a public-facing serverless function (see plan doc).
+//
+// Rate limiting, evaluated 2026-09-01: this endpoint requires a real,
+// verifyUser()-authenticated Supabase session, and Auth "Confirm email" is
+// ON (CLAUDE.md resume checklist item 3) — so abuse needs a real, confirmed
+// email address per attempt, not just an anonymous request. The realistic
+// remaining abuse path is a bad actor signing up several throwaway accounts
+// (each resetting the per-user PENDING_COOLDOWN_SECONDS below) to burn
+// GitHub Actions minutes on doomed connects and risk getting the shared
+// Garmin-facing IP flagged by Garmin's anti-automation systems. That needs
+// a dimension that survives a new account — IP address, or a global daily
+// ceiling — to actually stop it.
+// Deliberately NOT building either yet:
+//   - A global daily ceiling is simple but blunt: at current scale (a
+//     handful of real users, per CLAUDE.md) one legitimate user retrying a
+//     mistyped password a few times could exhaust it and lock out every
+//     other user's connect attempts for the rest of the day — a shared-fate
+//     failure mode worse than the gap it closes.
+//   - Real IP-based limiting (new table + migration + parsing Vercel's
+//     x-forwarded-for) is the correct fix but is real new infrastructure
+//     with an ongoing maintenance cost (stale-row cleanup, header-spoofing
+//     edge cases), not justified yet against a threat that hasn't actually
+//     been observed — email-confirmation-gated signup is already real
+//     friction against casual abuse.
+// Revisit if: GitHub Actions minutes usage shows an unexplained spike, if
+// Garmin's account or the shared egress IP gets flagged/rate-limited, or if
+// real user count grows enough that "a handful" no longer describes it.
 export default {
   async fetch(request: Request): Promise<Response> {
     return handleConnectInit(request)

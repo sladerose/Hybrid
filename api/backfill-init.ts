@@ -17,6 +17,13 @@ const BACKFILL_DAYS = 90
 // limit (pooled across every user, not per-user) and against Garmin/Zepp's
 // unofficial APIs. 24h per (user, source) means repeated clicks can't
 // starve the app's shared budget. See backfill.yml / backfill_*.py.
+//
+// IP-based / global rate limiting: deliberately not added here either, same
+// reasoning as connect-init.ts (see its comment for the full writeup). This
+// endpoint additionally requires connection_status.status = 'connected',
+// so a fresh throwaway account can't even reach the cooldown-bypass path
+// this analysis is about without first successfully completing a real
+// connect — a strictly higher bar than connect-init.ts's exposure.
 export default {
   async fetch(request: Request): Promise<Response> {
     return handleBackfillInit(request)
