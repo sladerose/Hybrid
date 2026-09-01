@@ -55,19 +55,24 @@ const DAY_COLOR: Record<string, string> = {
   Push: '#f97316',
   Pull: '#3b82f6',
   Legs: '#8b5cf6',
+  'At-Home Full Body': '#14b8a6',
 }
 
 const MUSCLE_COLORS: Record<string, string> = {
   Lats: '#3b82f6',
+  Back: '#0ea5e9',
   Chest: '#f97316',
   Quadriceps: '#8b5cf6',
+  Legs: '#c026d3',
   Triceps: '#fb923c',
   Shoulders: '#ef4444',
   Biceps: '#60a5fa',
   Traps: '#1d4ed8',
   Calves: '#a78bfa',
   Abs: '#6b7280',
+  Core: '#14b8a6',
   Glutes: '#7c3aed',
+  Adductors: '#e879f9',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

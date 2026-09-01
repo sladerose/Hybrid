@@ -5,7 +5,7 @@ import * as THREE from 'three'
 export type MuscleGroupKey =
   | 'Chest' | 'Lats' | 'Shoulders' | 'Traps' | 'Triceps'
   | 'Biceps' | 'Core' | 'Quadriceps' | 'Hamstrings'
-  | 'Glutes' | 'Calves'
+  | 'Glutes' | 'Calves' | 'Adductors'
 
 // ── DB value → visual key ─────────────────────────────────────────────────────
 
@@ -24,6 +24,7 @@ export const DB_TO_MUSCLE: Record<string, MuscleGroupKey> = {
   Hamstrings:  'Hamstrings',
   Glutes:      'Glutes',
   Calves:      'Calves',
+  Adductors:   'Adductors',
 }
 
 export const MUSCLE_LABELS: Record<MuscleGroupKey, string> = {
@@ -38,6 +39,7 @@ export const MUSCLE_LABELS: Record<MuscleGroupKey, string> = {
   Hamstrings:  'Hamstrings',
   Glutes:      'Glutes',
   Calves:      'Calves',
+  Adductors:   'Adductors',
 }
 
 // ── Training data per muscle ──────────────────────────────────────────────────
@@ -104,7 +106,7 @@ export interface BodyPartDef {
 export const ALL_MUSCLE_KEYS: MuscleGroupKey[] = [
   'Chest', 'Lats', 'Shoulders', 'Traps',
   'Biceps', 'Triceps', 'Core',
-  'Quadriceps', 'Hamstrings', 'Glutes', 'Calves',
+  'Quadriceps', 'Hamstrings', 'Glutes', 'Calves', 'Adductors',
 ]
 
 // PPL-grouped for the chip panel — matches Slade's Push / Pull / Legs structure
@@ -112,7 +114,7 @@ export const MUSCLE_GROUPS: Array<{ label: string; color: string; muscles: Muscl
   { label: 'Push',  color: '#f97316', muscles: ['Chest', 'Shoulders', 'Triceps'] },
   { label: 'Pull',  color: '#3b82f6', muscles: ['Lats', 'Traps', 'Biceps'] },
   { label: 'Core',  color: '#10b981', muscles: ['Core'] },
-  { label: 'Legs',  color: '#8b5cf6', muscles: ['Quadriceps', 'Hamstrings', 'Glutes', 'Calves'] },
+  { label: 'Legs',  color: '#8b5cf6', muscles: ['Quadriceps', 'Hamstrings', 'Glutes', 'Calves', 'Adductors'] },
 ]
 
 // Body spans y ≈ -1.38 (feet) to y ≈ 1.86 (head top). Centred at origin.
@@ -162,6 +164,10 @@ export const BODY_PARTS: BodyPartDef[] = [
   // ── Legs – hamstrings (posterior thigh) ───────────────────────────────────
   { id: 'hm-l', muscleGroup: 'Hamstrings', position: [-0.20, -0.30, -0.09], geometry: 'capsule', args: [0.13, 0.44, 4, 8] },
   { id: 'hm-r', muscleGroup: 'Hamstrings', position: [ 0.20, -0.30, -0.09], geometry: 'capsule', args: [0.13, 0.44, 4, 8] },
+
+  // ── Legs – adductors (inner thigh) ────────────────────────────────────────
+  { id: 'add-l', muscleGroup: 'Adductors', position: [-0.11, -0.22, 0], geometry: 'capsule', args: [0.08, 0.28, 4, 8] },
+  { id: 'add-r', muscleGroup: 'Adductors', position: [ 0.11, -0.22, 0], geometry: 'capsule', args: [0.08, 0.28, 4, 8] },
 
   // ── Calves ────────────────────────────────────────────────────────────────
   { id: 'clf-l', muscleGroup: 'Calves', position: [-0.20, -0.92, -0.02], geometry: 'capsule', args: [0.10, 0.36, 4, 8] },
