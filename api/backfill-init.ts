@@ -56,11 +56,23 @@ async function handleBackfillInit(request: Request): Promise<Response> {
       }
     }
 
-    await admin
+    // Atomic claim: the WHERE clause re-checks the cooldown at write time, so
+    // two requests racing past the read above can't both win. Whichever loses
+    // gets zero rows back here instead of a duplicate dispatch (confirmed
+    // double-dispatch incident: CLAUDE.md item 4, 2 Jul 2026).
+    const cooldownCutoff = new Date(Date.now() - BACKFILL_COOLDOWN_HOURS * 3_600_000).toISOString()
+    const { data: claimed } = await admin
       .from('connection_status')
       .update({ last_backfill_requested_at: new Date().toISOString() })
       .eq('user_id', userId)
       .eq('source', source)
+      .eq('status', 'connected')
+      .or(`last_backfill_requested_at.is.null,last_backfill_requested_at.lt.${cooldownCutoff}`)
+      .select('user_id')
+
+    if (!claimed || claimed.length === 0) {
+      throw new Error('Resync already requested recently — try again shortly')
+    }
 
     await dispatchBackfillWorkflow(userId, source)
 
