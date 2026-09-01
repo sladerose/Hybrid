@@ -1,0 +1,55 @@
+name: Backfill External Account IDs
+
+# One-off remediation: populate user_credentials.external_account_id for rows
+# written before the 2026-07-05 uniqueness fix (see
+# database/migrations/20260705_add_external_account_uniqueness.sql). Those
+# pre-fix rows have external_account_id = NULL, so the UNIQUE(source,
+# external_account_id) constraint doesn't protect them from the same
+# cross-user data corruption documented in CLAUDE.md's 2 Jul 2026 incident.
+#
+# Defaults to a dry-run report — leave "apply" unchecked to see what would
+# change with no writes. Runs scripts/backfill_external_account_ids.py.
+#
+# Run from the Actions tab, or via CLI:
+#   gh workflow run backfill-account-ids.yml -f source=zepp -f apply=true
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Which integration to backfill"
+        required: true
+        type: choice
+        options: [zepp, garmin]
+      apply:
+        description: "Actually write changes (unchecked = dry run report only)"
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  backfill-account-ids:
+    name: Backfill external_account_id
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run backfill
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
+        run: |
+          python scripts/backfill_external_account_ids.py \
+            --source "${{ inputs.source }}" \
+            ${{ inputs.apply && '--apply' || '' }}
