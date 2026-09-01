@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { format, parseISO, startOfWeek } from 'date-fns'
+import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from 'date-fns'
 import {
   ComposedChart, LineChart, ScatterChart,
   Line, Bar, Scatter,
@@ -15,6 +15,14 @@ import { Card } from '../components/shared/Card'
 import { ChartHeader } from '../components/shared/ChartHeader'
 import { MetricCard as KpiCard } from '../components/shared/MetricCard'
 import { LoadingSkeleton } from '../components/shared/LoadingSkeleton'
+import {
+  TrainingPlanBuilder,
+  WORKOUT_STYLES,
+  phaseStyle,
+  type TrainingPlanRow,
+  type TrainingPlanDayRow,
+  type WorkoutType,
+} from '../components/TrainingPlanBuilder'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,9 +86,11 @@ type EffortRow = {
   duration_seconds: number | null
 }
 
-// ── Training Plan Types & Data ───────────────────────────────────────────────
-
-type WorkoutType = 'easy' | 'tempo' | 'intervals' | 'long' | 'race' | 'rest' | 'strides'
+// ── Training Plan view-model ─────────────────────────────────────────────────
+// WorkoutType/WORKOUT_STYLES now live in components/TrainingPlanBuilder.tsx
+// (imported above) since that file owns the day editor that produces them.
+// These are the view-model shapes the read view (TrainingPlanSection) builds
+// from the fetched training_plans/training_plan_days rows.
 
 type PlanDay = {
   day: string
@@ -93,134 +103,57 @@ type PlanDay = {
 
 type PlanWeek = {
   weekNum: number
-  phase: 'Base' | 'Build' | 'Peak' | 'Taper' | 'Race'
+  phase: string
   start: string
   days: PlanDay[]
 }
 
-const RACE_DATE = '2026-08-15'
-const RACE_NAME = 'Garmin Run Series 10km'
-const PLAN_TOTAL_DAYS = 54
-// This race plan is hardcoded to Slade's own training block — not yet a
-// per-user feature (see .planning/PRODUCT-STRATEGY.md Phase 3).
-const SLADE_USER_ID = '4671de36-2274-4aa7-bf9c-d185336987c5'
+// Reconstructs a full week-by-week grid (defaulting missing days to rest)
+// from a plan row + its flat day rows, spanning from start_date through
+// target_date (or the last saved day if there's no target_date).
+function buildPlanWeeks(plan: TrainingPlanRow, days: TrainingPlanDayRow[]): PlanWeek[] {
+  const start = parseISO(plan.start_date)
+  const lastDayDate = days.reduce((max, d) => (d.date > max ? d.date : max), plan.start_date)
+  const endDateStr = plan.target_date && plan.target_date > lastDayDate ? plan.target_date : lastDayDate
+  const totalDays = Math.max(1, differenceInCalendarDays(parseISO(endDateStr), start) + 1)
+  const totalWeeks = Math.ceil(totalDays / 7)
 
-const WORKOUT_STYLES: Record<WorkoutType, { dot: string; badge: string; text: string }> = {
-  easy:      { dot: 'bg-blue-400',   badge: 'bg-blue-500/10 border-blue-500/30',     text: 'text-blue-400'   },
-  long:      { dot: 'bg-purple-400', badge: 'bg-purple-500/10 border-purple-500/30', text: 'text-purple-400' },
-  tempo:     { dot: 'bg-amber-400',  badge: 'bg-amber-500/10 border-amber-500/30',   text: 'text-amber-400'  },
-  intervals: { dot: 'bg-red-400',    badge: 'bg-red-500/10 border-red-500/30',       text: 'text-red-400'    },
-  strides:   { dot: 'bg-orange-400', badge: 'bg-orange-500/10 border-orange-500/30', text: 'text-orange-400' },
-  race:      { dot: 'bg-green-400',  badge: 'bg-green-500/10 border-green-500/30',   text: 'text-green-400'  },
-  rest:      { dot: 'bg-gray-600',   badge: 'border-transparent',                    text: 'text-gray-600'   },
+  const byDate = new Map(days.map(d => [d.date, d]))
+  const weeks: PlanWeek[] = []
+
+  for (let w = 0; w < totalWeeks; w++) {
+    const weekDays: PlanDay[] = []
+    let phase = ''
+    for (let d = 0; d < 7; d++) {
+      const date = addDays(start, w * 7 + d)
+      const dateStr = format(date, 'yyyy-MM-dd')
+      const row = byDate.get(dateStr)
+      if (row?.phase && !phase) phase = row.phase
+      weekDays.push({
+        day: format(date, 'EEE'),
+        date: dateStr,
+        type: row?.workout_type ?? 'rest',
+        label: row?.label ?? (row?.workout_type ? row.workout_type : 'Rest'),
+        km: n(row?.distance_km) ?? 0,
+        description: row?.description ?? undefined,
+      })
+    }
+    weeks.push({ weekNum: w + 1, phase, start: weekDays[0].date, days: weekDays })
+  }
+  return weeks
 }
 
-const PHASE_STYLE: Record<PlanWeek['phase'], string> = {
-  Base:  'text-blue-400',
-  Build: 'text-amber-400',
-  Peak:  'text-red-400',
-  Taper: 'text-purple-400',
-  Race:  'text-green-400',
+// Mirrors buildPlanWeeks' own endDateStr calculation rather than reading it
+// back off the padded week grid -- buildPlanWeeks always rounds up to full
+// 7-day weeks, so deriving "total days" from the padded last day overstates
+// any plan whose real length isn't itself a multiple of 7 (e.g. a 54-day
+// plan would report 56), understating progress %.
+function planTotalDays(plan: TrainingPlanRow, days: TrainingPlanDayRow[]): number {
+  const start = parseISO(plan.start_date)
+  const lastDayDate = days.reduce((max, d) => (d.date > max ? d.date : max), plan.start_date)
+  const endDateStr = plan.target_date && plan.target_date > lastDayDate ? plan.target_date : lastDayDate
+  return Math.max(1, differenceInCalendarDays(parseISO(endDateStr), start) + 1)
 }
-
-const TRAINING_PLAN: PlanWeek[] = [
-  {
-    weekNum: 1, phase: 'Base', start: '2026-06-22',
-    days: [
-      { day: 'Mon', date: '2026-06-22', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Tue', date: '2026-06-23', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Wed', date: '2026-06-24', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Thu', date: '2026-06-25', type: 'easy',  label: 'Easy',  km: 3, description: 'Conversational pace. Get legs moving after the break.' },
-      { day: 'Fri', date: '2026-06-26', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Sat', date: '2026-06-27', type: 'easy',  label: 'Easy',  km: 4, description: 'Easy effort. No watch pressure.' },
-      { day: 'Sun', date: '2026-06-28', type: 'rest',  label: 'Rest',  km: 0 },
-    ],
-  },
-  {
-    weekNum: 2, phase: 'Base', start: '2026-06-29',
-    days: [
-      { day: 'Mon', date: '2026-06-29', type: 'rest',    label: 'Rest',    km: 0 },
-      { day: 'Tue', date: '2026-06-30', type: 'easy',    label: 'Easy',    km: 4 },
-      { day: 'Wed', date: '2026-07-01', type: 'rest',    label: 'Rest',    km: 0 },
-      { day: 'Thu', date: '2026-07-02', type: 'strides', label: 'Strides', km: 3, description: '2km easy warmup + 6×20s strides + 1km cooldown.' },
-      { day: 'Fri', date: '2026-07-03', type: 'rest',    label: 'Rest',    km: 0 },
-      { day: 'Sat', date: '2026-07-04', type: 'long',    label: 'Long',    km: 5, description: '5km easy. Consistent effort throughout.' },
-      { day: 'Sun', date: '2026-07-05', type: 'rest',    label: 'Rest',    km: 0 },
-    ],
-  },
-  {
-    weekNum: 3, phase: 'Build', start: '2026-07-06',
-    days: [
-      { day: 'Mon', date: '2026-07-06', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Tue', date: '2026-07-07', type: 'easy',  label: 'Easy',  km: 4 },
-      { day: 'Wed', date: '2026-07-08', type: 'tempo', label: 'Tempo', km: 4, description: '1km easy + 20min tempo + 1km easy. Comfortably hard effort.' },
-      { day: 'Thu', date: '2026-07-09', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Fri', date: '2026-07-10', type: 'easy',  label: 'Easy',  km: 4 },
-      { day: 'Sat', date: '2026-07-11', type: 'long',  label: 'Long',  km: 6, description: '6km. Run the last 2km at marathon effort.' },
-      { day: 'Sun', date: '2026-07-12', type: 'rest',  label: 'Rest',  km: 0 },
-    ],
-  },
-  {
-    weekNum: 4, phase: 'Build', start: '2026-07-13',
-    days: [
-      { day: 'Mon', date: '2026-07-13', type: 'rest',      label: 'Rest',   km: 0 },
-      { day: 'Tue', date: '2026-07-14', type: 'easy',      label: 'Easy',   km: 4 },
-      { day: 'Wed', date: '2026-07-15', type: 'intervals', label: '5×400m', km: 4, description: '1km warmup + 5×400m at 5k effort with 90s rest + 1km cooldown.' },
-      { day: 'Thu', date: '2026-07-16', type: 'rest',      label: 'Rest',   km: 0 },
-      { day: 'Fri', date: '2026-07-17', type: 'tempo',     label: 'Tempo',  km: 5, description: '1km easy + 25min at 10k goal pace + 1km easy.' },
-      { day: 'Sat', date: '2026-07-18', type: 'long',      label: 'Long',   km: 7, description: '7km easy. Longest run yet — go slow and enjoy it.' },
-      { day: 'Sun', date: '2026-07-19', type: 'rest',      label: 'Rest',   km: 0 },
-    ],
-  },
-  {
-    weekNum: 5, phase: 'Peak', start: '2026-07-20',
-    days: [
-      { day: 'Mon', date: '2026-07-20', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Tue', date: '2026-07-21', type: 'easy',  label: 'Easy',  km: 5 },
-      { day: 'Wed', date: '2026-07-22', type: 'tempo', label: 'Tempo', km: 6, description: '1km easy + 30min at 10k goal pace + 1km easy. This is your race effort.' },
-      { day: 'Thu', date: '2026-07-23', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Fri', date: '2026-07-24', type: 'easy',  label: 'Easy',  km: 4 },
-      { day: 'Sat', date: '2026-07-25', type: 'long',  label: 'Long',  km: 8, description: '8km easy. Peak long run. Controlled and confident.' },
-      { day: 'Sun', date: '2026-07-26', type: 'rest',  label: 'Rest',  km: 0 },
-    ],
-  },
-  {
-    weekNum: 6, phase: 'Taper', start: '2026-07-27',
-    days: [
-      { day: 'Mon', date: '2026-07-27', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Tue', date: '2026-07-28', type: 'easy',  label: 'Easy',  km: 4 },
-      { day: 'Wed', date: '2026-07-29', type: 'tempo', label: 'Tempo', km: 3, description: 'Short 15min tempo. Sharp effort, not long.' },
-      { day: 'Thu', date: '2026-07-30', type: 'rest',  label: 'Rest',  km: 0 },
-      { day: 'Fri', date: '2026-07-31', type: 'easy',  label: 'Easy',  km: 3 },
-      { day: 'Sat', date: '2026-08-01', type: 'long',  label: 'Long',  km: 6, description: '6km. Reduced volume. Legs should feel fresh.' },
-      { day: 'Sun', date: '2026-08-02', type: 'rest',  label: 'Rest',  km: 0 },
-    ],
-  },
-  {
-    weekNum: 7, phase: 'Taper', start: '2026-08-03',
-    days: [
-      { day: 'Mon', date: '2026-08-03', type: 'rest',    label: 'Rest',    km: 0 },
-      { day: 'Tue', date: '2026-08-04', type: 'easy',    label: 'Easy',    km: 3 },
-      { day: 'Wed', date: '2026-08-05', type: 'strides', label: 'Strides', km: 2, description: '10min easy + 4×20s strides. Activate, do not fatigue.' },
-      { day: 'Thu', date: '2026-08-06', type: 'rest',    label: 'Rest',    km: 0 },
-      { day: 'Fri', date: '2026-08-07', type: 'easy',    label: 'Easy',    km: 2, description: 'Short shakeout. Trust the taper.' },
-      { day: 'Sat', date: '2026-08-08', type: 'rest',    label: 'Rest',    km: 0 },
-      { day: 'Sun', date: '2026-08-09', type: 'rest',    label: 'Rest',    km: 0 },
-    ],
-  },
-  {
-    weekNum: 8, phase: 'Race', start: '2026-08-10',
-    days: [
-      { day: 'Mon', date: '2026-08-10', type: 'rest', label: 'Rest', km: 0 },
-      { day: 'Tue', date: '2026-08-11', type: 'easy', label: 'Easy', km: 2, description: 'Very easy 2km. Stay loose, stay calm.' },
-      { day: 'Wed', date: '2026-08-12', type: 'rest', label: 'Rest', km: 0 },
-      { day: 'Thu', date: '2026-08-13', type: 'easy', label: 'Easy', km: 2, description: '2km easy + 2 strides. Final activation — do not fatigue.' },
-      { day: 'Fri', date: '2026-08-14', type: 'rest', label: 'Rest', km: 0 },
-      { day: 'Sat', date: '2026-08-15', type: 'race', label: 'RACE', km: 10, description: 'Garmin Run Series 10km · Kings Park Stadium, Durban · 07:00 start.' },
-      { day: 'Sun', date: '2026-08-16', type: 'rest', label: 'Rest', km: 0 },
-    ],
-  },
-]
 
 // ── Chart config moved to useChartTheme() hook ───────────────────────────────
 
@@ -639,20 +572,35 @@ function RunningGearCard({ data }: { data: GearRow[] }) {
 
 // ── Training Plan Section ─────────────────────────────────────────────────────
 
-function TrainingPlanSection({ runs }: { runs: RunRow[] }) {
+function TrainingPlanSection({
+  plan,
+  days,
+  runs,
+  onEdit,
+  onDelete,
+}: {
+  plan: TrainingPlanRow
+  days: TrainingPlanDayRow[]
+  runs: RunRow[]
+  onEdit: () => void
+  onDelete: () => void
+}) {
   const [expanded, setExpanded] = useState(false)
+
+  const weeks = buildPlanWeeks(plan, days)
+  const totalDays = planTotalDays(plan, days)
 
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
-  const oneDayMs = 86400000
-  const daysToRace = Math.ceil((parseISO(RACE_DATE).getTime() - today.getTime()) / oneDayMs)
-  const daysElapsed = Math.max(0, Math.floor((today.getTime() - parseISO('2026-06-22').getTime()) / oneDayMs))
-  const progressPct = Math.min(100, Math.round((daysElapsed / PLAN_TOTAL_DAYS) * 100))
+  const hasTarget = plan.target_date != null
+  const daysToTarget = hasTarget ? differenceInCalendarDays(parseISO(plan.target_date!), today) : null
+  const daysElapsed = Math.max(0, differenceInCalendarDays(today, parseISO(plan.start_date)))
+  const progressPct = Math.min(100, Math.round((daysElapsed / totalDays) * 100))
 
   const actualByDate = new Map<string, RunRow>()
-  runs.forEach(r => { if (r.start_date >= '2026-06-22') actualByDate.set(r.start_date, r) })
+  runs.forEach(r => { if (r.start_date >= plan.start_date) actualByDate.set(r.start_date, r) })
 
-  const dueDays = TRAINING_PLAN.flatMap(w => w.days).filter(
+  const dueDays = weeks.flatMap(w => w.days).filter(
     d => d.type !== 'rest' && d.type !== 'race' && d.date <= todayStr
   )
   const completedCount = dueDays.filter(d => actualByDate.has(d.date)).length
@@ -660,26 +608,42 @@ function TrainingPlanSection({ runs }: { runs: RunRow[] }) {
   // Volume compliance
   const plannedToDate = dueDays.reduce((s, d) => s + d.km, 0)
   const actualToDate = runs
-    .filter(r => r.start_date >= '2026-06-22' && r.start_date <= todayStr)
+    .filter(r => r.start_date >= plan.start_date && r.start_date <= todayStr)
     .reduce((s, r) => s + (n(r.distance_km) ?? 0), 0)
   const kmBalance = actualToDate - plannedToDate
   const balanceLabel = kmBalance >= 0 ? `+${kmBalance.toFixed(1)} km` : `${kmBalance.toFixed(1)} km`
   const balanceColor = kmBalance >= -2 ? 'text-green-400' : kmBalance >= -5 ? 'text-amber-400' : 'text-red-400'
   const balanceStatus = kmBalance >= -2 ? 'On track' : kmBalance >= -5 ? 'Behind' : 'Well behind'
 
+  const goalLabel = hasTarget && plan.goal_type === 'race' ? 'Goal Race' : 'Goal'
+  const subLineParts: string[] = []
+  if (plan.target_date) subLineParts.push(format(parseISO(plan.target_date), 'd MMM yyyy'))
+  if (plan.location) subLineParts.push(plan.location)
+  const subLine = subLineParts.length ? subLineParts.join(' · ') : `Started ${format(parseISO(plan.start_date), 'd MMM yyyy')}`
+
   return (
     <div className="space-y-2">
       <Card>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-1">Goal Race</p>
-            <p className="text-base font-semibold text-green-400 truncate">{RACE_NAME}</p>
-            <p className="text-xs text-gray-500 mt-0.5">15 Aug 2026 · 07:00 · Kings Park Stadium, Durban</p>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">{goalLabel}</p>
+              <button onClick={onEdit} className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors cursor-pointer">
+                edit
+              </button>
+              <button onClick={onDelete} className="text-[10px] text-gray-500 hover:text-red-400 transition-colors cursor-pointer">
+                delete
+              </button>
+            </div>
+            <p className="text-base font-semibold text-green-400 truncate">{plan.name}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{subLine}</p>
           </div>
-          <div className="text-right shrink-0">
-            <p className="text-3xl font-bold text-green-400 tabular-nums leading-none">{Math.max(0, daysToRace)}</p>
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-1">days to go</p>
-          </div>
+          {hasTarget && (
+            <div className="text-right shrink-0">
+              <p className="text-3xl font-bold text-green-400 tabular-nums leading-none">{Math.max(0, daysToTarget ?? 0)}</p>
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-1">days to go</p>
+            </div>
+          )}
         </div>
         <div className="mt-3 space-y-1.5">
           <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -726,7 +690,7 @@ function TrainingPlanSection({ runs }: { runs: RunRow[] }) {
           </div>
 
           <div className="space-y-1.5">
-            {TRAINING_PLAN.map(week => {
+            {weeks.map(week => {
               const weekEnd = week.days[week.days.length - 1].date
               const isCurrentWeek = week.start <= todayStr && todayStr <= weekEnd
               const isPastWeek = weekEnd < todayStr
@@ -747,9 +711,11 @@ function TrainingPlanSection({ runs }: { runs: RunRow[] }) {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-gray-400">W{week.weekNum}</span>
-                      <span className={`text-[10px] font-semibold uppercase tracking-wider ${PHASE_STYLE[week.phase]}`}>
-                        {week.phase}
-                      </span>
+                      {week.phase && (
+                        <span className={`text-[10px] font-semibold uppercase tracking-wider ${phaseStyle(week.phase)}`}>
+                          {week.phase}
+                        </span>
+                      )}
                       <span className="text-[10px] text-gray-500 hidden sm:block">
                         {format(parseISO(week.start), 'MMM d')}–{format(parseISO(weekEnd), 'MMM d')}
                       </span>
@@ -821,6 +787,138 @@ function TrainingPlanSection({ runs }: { runs: RunRow[] }) {
         </>
       )}
     </div>
+  )
+}
+
+// ── Training Plan Panel (fetch + empty state + create/edit builder) ─────────
+// Owns the training_plans/training_plan_days fetch and the view/create/edit
+// mode switch. TrainingPlanSection above stays a pure read view fed by
+// whatever plan this panel resolves.
+
+function TrainingPlanPanel({ runs }: { runs: RunRow[] }) {
+  const { user } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [plan, setPlan] = useState<TrainingPlanRow | null>(null)
+  const [planDays, setPlanDays] = useState<TrainingPlanDayRow[]>([])
+  const [mode, setMode] = useState<'view' | 'create' | 'edit'>('view')
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    const uid = user.id
+
+    supabase
+      .from('training_plans')
+      .select('id,user_id,name,goal_type,target_date,target_distance_km,target_time_seconds,location,start_date,is_active,created_at')
+      .eq('user_id', uid)
+      .eq('is_active', true)
+      .order('start_date', { ascending: false })
+      .limit(1)
+      .then(async ({ data: planRows, error: planErr }) => {
+        if (cancelled) return
+        if (planErr) { setError(planErr.message); setLoading(false); return }
+
+        const activePlan = planRows?.[0] ?? null
+        if (!activePlan) {
+          setPlan(null)
+          setPlanDays([])
+          setLoading(false)
+          return
+        }
+
+        // training_plan_days has no direct user_id column -- RLS enforces
+        // ownership via an EXISTS join back to training_plans.user_id.
+        const { data: dayRows, error: daysErr } = await supabase
+          .from('training_plan_days')
+          .select('id,plan_id,date,workout_type,label,distance_km,description,phase')
+          .eq('plan_id', activePlan.id)
+          .order('date', { ascending: true })
+
+        if (cancelled) return
+        if (daysErr) { setError(daysErr.message); setLoading(false); return }
+
+        setPlan(activePlan)
+        setPlanDays(dayRows ?? [])
+        setLoading(false)
+      })
+
+    return () => { cancelled = true }
+    // Keyed on user?.id, not the whole `user` object: AuthContext's
+    // onAuthStateChange fires setUser(s?.user ?? null) on every auth event,
+    // including a routine TOKEN_REFRESHED roughly every hour, and each fire
+    // produces a new object reference for the same underlying account. Keying
+    // on the object itself re-ran this fetch (and its setLoading(true)) on
+    // every silent token refresh -- since `loading` is checked before the
+    // create/edit mode branch, that unmounted an in-progress
+    // TrainingPlanBuilder mid-edit and discarded whatever the user had typed.
+  }, [user?.id, refreshKey])
+
+  async function handleDelete() {
+    if (!plan || !user) return
+    if (!window.confirm(`Delete "${plan.name}"? This cannot be undone.`)) return
+    const { error: delErr } = await supabase.from('training_plans').delete().eq('id', plan.id).eq('user_id', user.id)
+    if (delErr) { setError(delErr.message); return }
+    setPlan(null)
+    setPlanDays([])
+  }
+
+  if (!user) return null
+
+  if (loading) {
+    return (
+      <Card>
+        <div className="h-16 flex items-center justify-center">
+          <div className="w-4 h-4 rounded-full border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 animate-spin" />
+        </div>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <p className="text-sm text-red-400">Could not load training plan: {error}</p>
+      </Card>
+    )
+  }
+
+  if (mode === 'create' || mode === 'edit') {
+    return (
+      <TrainingPlanBuilder
+        userId={user.id}
+        existingPlan={mode === 'edit' && plan ? { plan, days: planDays } : null}
+        onCancel={() => setMode('view')}
+        onSaved={() => { setMode('view'); setRefreshKey(k => k + 1) }}
+      />
+    )
+  }
+
+  if (!plan) {
+    return (
+      <Card>
+        <p className="text-sm text-gray-500 mb-3">No training plan set.</p>
+        <button
+          onClick={() => setMode('create')}
+          className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+        >
+          Create a training plan
+        </button>
+      </Card>
+    )
+  }
+
+  return (
+    <TrainingPlanSection
+      plan={plan}
+      days={planDays}
+      runs={runs}
+      onEdit={() => setMode('edit')}
+      onDelete={handleDelete}
+    />
   )
 }
 
@@ -1181,16 +1279,9 @@ export default function RunningPage() {
         </p>
       </div>
 
-      {/* Training plan — hardcoded to Slade's own race plan for now (see
-          .planning/PRODUCT-STRATEGY.md Phase 3). Other users get an empty
-          state until per-user training plans exist. */}
-      {user?.id === SLADE_USER_ID ? (
-        <TrainingPlanSection runs={runs} />
-      ) : (
-        <div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-500">
-          No training plan set.
-        </div>
-      )}
+      {/* Training plan — per-user (training_plans / training_plan_days),
+          fetched and managed by TrainingPlanPanel. */}
+      <TrainingPlanPanel runs={runs} />
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
