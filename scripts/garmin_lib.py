@@ -209,20 +209,47 @@ def sync_fitness_age(supabase, client: Garmin, user_id: str, date_str: str) -> N
 
 
 def sync_weekly_stress(supabase, client: Garmin, user_id: str, as_of_date: str, weeks: int = 52) -> None:
+    """Garmin's weekly-stress endpoint response uses `calendarDate` + `value`
+    (confirmed against both the upstream garminconnect library source and
+    this org's separate garmin-mcp test fixtures) — not the `startTimestampGMT`
+    / `overallStressLevel` / `stressLevel` field names this function used to
+    read, which don't exist on the real response. Because those never
+    matched, `stress_value` silently upserted as NULL for every row, forever.
+
+    Separately, live production data (confirmed 2026-09-01: 398 rows in
+    garmin_weekly_stress, roughly evenly spread across all 7 weekdays)
+    shows the endpoint actually returning one entry per DAY, not per week,
+    despite its name. Rather than trust that assumption either way, this
+    normalizes at the write boundary: bucket every returned entry into its
+    ISO week (Monday start) and average the stress values within that
+    bucket. That produces a correct one-row-per-week aggregate regardless
+    of whether Garmin hands back daily or weekly entries, and stays safe to
+    re-run (upsert keyed on user_id, week_start).
+    """
     weekly = client.get_weekly_stress(as_of_date, weeks)
     if not weekly:
         return
-    rows = []
     items = weekly if isinstance(weekly, list) else weekly.get("weeklyStress", [])
+
+    buckets: dict[str, list[int]] = {}
     for item in items:
-        week_start = item.get("startTimestampGMT") or item.get("calendarDate")
-        if week_start:
-            rows.append({
-                "user_id": user_id,
-                "week_start": week_start[:10],
-                "stress_value": _int(item.get("overallStressLevel") or item.get("stressLevel")),
-                "synced_at": datetime.datetime.utcnow().isoformat(),
-            })
+        raw_date = item.get("calendarDate")
+        stress = _int(item.get("value"))
+        if not raw_date or stress is None:
+            continue
+        d = datetime.date.fromisoformat(raw_date[:10])
+        week_start = (d - datetime.timedelta(days=d.weekday())).isoformat()
+        buckets.setdefault(week_start, []).append(stress)
+
+    rows = [
+        {
+            "user_id": user_id,
+            "week_start": week_start,
+            "stress_value": round(sum(values) / len(values)),
+            "synced_at": datetime.datetime.utcnow().isoformat(),
+        }
+        for week_start, values in buckets.items()
+    ]
     if rows:
         supabase.table("garmin_weekly_stress").upsert(rows, on_conflict="user_id,week_start").execute()
         print(f"  garmin_weekly_stress OK ({len(rows)} weeks)")
